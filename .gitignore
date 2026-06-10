@@ -1,0 +1,11 @@
+.build/
+dist/
+.DS_Store
+*.xcuserdata/
+*.xcuserstate
+DerivedData/
+.budgettracer-backend.log
+.budgettracer-backend.err.log
+.budgettracer-backend.pid
+.codex/screenshots/
+tmp/
