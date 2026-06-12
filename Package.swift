@@ -40,6 +40,10 @@ let package = Package(
         .testTarget(
             name: "BudgetCoreTests",
             dependencies: ["BudgetCore", "BudgetPersistence", "BudgetPlaid"]
+        ),
+        .testTarget(
+            name: "BudgetTracerSharedUITests",
+            dependencies: ["BudgetCore", "BudgetTracerSharedUI"]
         )
     ],
     swiftLanguageVersions: [.v5]

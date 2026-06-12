@@ -131,6 +131,35 @@ struct PlaidTransactionsSyncRequest: Encodable {
     }
 }
 
+struct PlaidAccountsGetRequest: Encodable {
+    var clientID: String
+    var secret: String
+    var accessToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case clientID = "client_id"
+        case secret
+        case accessToken = "access_token"
+    }
+}
+
+public struct PlaidAccountsGetResponse: Decodable, Hashable, Sendable {
+    public var accounts: [PlaidAccount]
+    public var requestID: String?
+
+    public init(accounts: [PlaidAccount], requestID: String?) {
+        self.accounts = accounts
+        self.requestID = requestID
+    }
+
+    public static let empty = PlaidAccountsGetResponse(accounts: [], requestID: nil)
+
+    enum CodingKeys: String, CodingKey {
+        case accounts
+        case requestID = "request_id"
+    }
+}
+
 public struct PlaidTransactionsSyncResponse: Decodable, Hashable, Sendable {
     public var accounts: [PlaidAccount]
     public var added: [PlaidTransaction]

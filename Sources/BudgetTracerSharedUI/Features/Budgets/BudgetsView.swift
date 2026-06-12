@@ -7,23 +7,39 @@ struct BudgetsView: View {
     var body: some View {
         List {
             ForEach(snapshot.categories, id: \.id) { category in
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(category.name)
-                        Text(limitText(for: category))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        categoryLabel(for: category)
+                        Spacer()
+                        spendText(for: category)
                     }
 
-                    Spacer()
-
-                    if let spend = spend(for: category) {
-                        Text(spend.spent.formatted)
-                            .monospacedDigit()
+                    VStack(alignment: .leading, spacing: 8) {
+                        categoryLabel(for: category)
+                        spendText(for: category)
                     }
                 }
                 .padding(.vertical, 4)
             }
+        }
+        .scrollContentBackground(.hidden)
+        .background(BudgetTracerStyle.screenBackground)
+    }
+
+    private func categoryLabel(for category: BudgetCategory) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(category.name)
+            Text(limitText(for: category))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func spendText(for category: BudgetCategory) -> some View {
+        if let spend = spend(for: category) {
+            Text(spend.spent.formatted)
+                .monospacedDigit()
         }
     }
 

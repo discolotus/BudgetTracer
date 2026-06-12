@@ -36,65 +36,75 @@ public enum SampleBudgetData {
         let calendar = Calendar(identifier: .gregorian)
         let now = Date()
         let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? now
-        let paycheckDate = calendar.date(byAdding: .day, value: 4, to: monthStart) ?? now
-        let rentDate = calendar.date(byAdding: .day, value: 0, to: monthStart) ?? now
-        let utilityDate = calendar.date(byAdding: .day, value: 12, to: monthStart) ?? now
+        var transactions: [BudgetTransaction] = []
+        var recurringTransactionIDs: Set<BudgetTransaction.ID> = []
+
+        func date(day: Int, in monthStart: Date) -> Date {
+            calendar.date(byAdding: .day, value: max(day - 1, 0), to: monthStart) ?? monthStart
+        }
+
+        for (index, monthOffset) in (-11...0).enumerated() {
+            let transactionPrefix = monthOffset == 0 ? "current" : "\(abs(monthOffset))mo"
+            let transactionMonthStart = calendar.date(byAdding: .month, value: monthOffset, to: monthStart) ?? monthStart
+            let paycheck = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-paycheck",
+                accountID: checking.id,
+                categoryID: income.id,
+                postedAt: date(day: 5, in: transactionMonthStart),
+                merchantName: "Payroll",
+                amount: Money(minorUnits: 500_000 + Int64(index * 2_500))
+            )
+            let rent = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-rent",
+                accountID: checking.id,
+                categoryID: housing.id,
+                postedAt: transactionMonthStart,
+                merchantName: "Rent",
+                amount: .dollars(-2650)
+            )
+            let utilities = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-utilities",
+                accountID: checking.id,
+                categoryID: utilities.id,
+                postedAt: date(day: 12 + index % 3, in: transactionMonthStart),
+                merchantName: "Utility Provider",
+                amount: Money(minorUnits: -(28_000 + Int64(index % 5) * 750))
+            )
+            let market = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-market",
+                accountID: credit.id,
+                categoryID: groceries.id,
+                postedAt: date(day: 8 + index % 4, in: transactionMonthStart),
+                merchantName: "Neighborhood Market",
+                amount: Money(minorUnits: -(15_000 + Int64(index % 6) * 850))
+            )
+            let cafe = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-cafe",
+                accountID: credit.id,
+                categoryID: dining.id,
+                postedAt: date(day: 18 + index % 3, in: transactionMonthStart),
+                merchantName: "Corner Cafe",
+                amount: Money(minorUnits: -(3_500 + Int64(index % 4) * 425))
+            )
+            let hardware = BudgetTransaction(
+                id: "txn-\(transactionPrefix)-hardware",
+                accountID: checking.id,
+                categoryID: home.id,
+                postedAt: date(day: 24 + index % 4, in: transactionMonthStart),
+                merchantName: "Hardware Supply",
+                amount: Money(minorUnits: -(7_500 + Int64(index % 7) * 700))
+            )
+
+            transactions.append(contentsOf: [paycheck, rent, utilities, market, cafe, hardware])
+            recurringTransactionIDs.formUnion([paycheck.id, rent.id, utilities.id])
+        }
 
         return BudgetSnapshot(
             institutions: [institution],
             accounts: [checking, savings, credit],
             categories: [groceries, dining, home, housing, utilities, income],
-            transactions: [
-                BudgetTransaction(
-                    id: "txn-paycheck",
-                    accountID: checking.id,
-                    categoryID: income.id,
-                    postedAt: paycheckDate,
-                    merchantName: "Payroll",
-                    amount: .dollars(5200)
-                ),
-                BudgetTransaction(
-                    id: "txn-rent",
-                    accountID: checking.id,
-                    categoryID: housing.id,
-                    postedAt: rentDate,
-                    merchantName: "Rent",
-                    amount: .dollars(-2650)
-                ),
-                BudgetTransaction(
-                    id: "txn-utilities",
-                    accountID: checking.id,
-                    categoryID: utilities.id,
-                    postedAt: utilityDate,
-                    merchantName: "Utility Provider",
-                    amount: .dollars(-310.45)
-                ),
-                BudgetTransaction(
-                    id: "txn-market",
-                    accountID: credit.id,
-                    categoryID: groceries.id,
-                    postedAt: calendar.date(byAdding: .day, value: -3, to: now) ?? now,
-                    merchantName: "Neighborhood Market",
-                    amount: .dollars(-184.23)
-                ),
-                BudgetTransaction(
-                    id: "txn-cafe",
-                    accountID: credit.id,
-                    categoryID: dining.id,
-                    postedAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
-                    merchantName: "Corner Cafe",
-                    amount: .dollars(-36.75)
-                ),
-                BudgetTransaction(
-                    id: "txn-hardware",
-                    accountID: checking.id,
-                    categoryID: home.id,
-                    postedAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now,
-                    merchantName: "Hardware Supply",
-                    amount: .dollars(-92.10)
-                )
-            ],
-            recurringTransactionIDs: ["txn-paycheck", "txn-rent", "txn-utilities"]
+            transactions: transactions,
+            recurringTransactionIDs: recurringTransactionIDs
         )
     }()
 }

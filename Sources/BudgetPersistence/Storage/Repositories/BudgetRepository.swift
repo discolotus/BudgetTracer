@@ -131,6 +131,34 @@ public final class BudgetRepository {
         return Int(rows.first?["count"]?.int64 ?? 0)
     }
 
+    public func plaidItemsNeedingSync(userID: String, maxAge: TimeInterval, asOf date: Date) throws -> [PlaidItemRecord] {
+        try plaidItems(userID: userID).filter { item in
+            guard !item.needsReauth else {
+                return false
+            }
+
+            guard let lastSuccessfulSyncAt = item.lastSuccessfulSyncAt else {
+                return true
+            }
+
+            return date.timeIntervalSince(lastSuccessfulSyncAt) >= maxAge
+        }
+    }
+
+    public func snapshotLastSuccessfulSyncAt(userID: String) throws -> Date? {
+        let items = try plaidItems(userID: userID)
+        guard !items.isEmpty else {
+            return nil
+        }
+
+        let syncDates = items.compactMap(\.lastSuccessfulSyncAt)
+        guard syncDates.count == items.count else {
+            return nil
+        }
+
+        return syncDates.min()
+    }
+
     public func updateTransactionsCursor(itemID: String, cursor: String, syncedAt: Date) throws {
         try database.run(
             """
@@ -508,7 +536,8 @@ public final class BudgetRepository {
             accounts: accounts,
             categories: categories,
             transactions: transactions,
-            recurringTransactionIDs: recurringIDs
+            recurringTransactionIDs: recurringIDs,
+            lastSuccessfulSyncAt: try snapshotLastSuccessfulSyncAt(userID: userID)
         )
     }
 

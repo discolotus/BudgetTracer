@@ -8,11 +8,18 @@ actor BackendRouter {
     private let repository: BudgetRepository
     private let plaidSyncService: PlaidSyncService
     private let defaultUserID: String
+    private let clock: @Sendable () -> Date
 
-    init(repository: BudgetRepository, plaidSyncService: PlaidSyncService, defaultUserID: String) {
+    init(
+        repository: BudgetRepository,
+        plaidSyncService: PlaidSyncService,
+        defaultUserID: String,
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.repository = repository
         self.plaidSyncService = plaidSyncService
         self.defaultUserID = defaultUserID
+        self.clock = clock
     }
 
     func route(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -21,7 +28,7 @@ actor BackendRouter {
             case ("GET", "/health"):
                 return try health()
             case ("GET", "/snapshot"):
-                return try snapshot(userID: request.query["user_id"] ?? defaultUserID)
+                return try await snapshot(request)
             case ("POST", "/plaid/link-token"):
                 return try await createLinkToken(request)
             case ("POST", "/plaid/exchange-public-token"):
@@ -47,9 +54,47 @@ actor BackendRouter {
         return HTTPResponse.json(body: HealthResponse(status: "ok", userID: defaultUserID, plaidItemCount: itemCount))
     }
 
-    private func snapshot(userID: String) throws -> HTTPResponse {
+    private func snapshot(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let userID = request.query["user_id"] ?? defaultUserID
+        let policy = try SnapshotFreshnessPolicy(query: request.query)
+        let syncedItemIDs = try await syncItemsIfNeeded(userID: userID, policy: policy)
+        let snapshot = try repository.fetchSnapshot(userID: userID)
+        return HTTPResponse.json(
+            body: SnapshotResponse(
+                snapshot: snapshot,
+                freshness: SnapshotFreshnessResponse(
+                    policy: policy.responseValue,
+                    syncedItemIDs: syncedItemIDs
+                )
+            )
+        )
+    }
+
+    private func cachedSnapshot(userID: String) throws -> HTTPResponse {
         let snapshot = try repository.fetchSnapshot(userID: userID)
         return HTTPResponse.json(body: SnapshotResponse(snapshot: snapshot))
+    }
+
+    private func syncItemsIfNeeded(userID: String, policy: SnapshotFreshnessPolicy) async throws -> [String] {
+        let itemIDs: [String]
+        switch policy {
+        case .cached:
+            itemIDs = []
+        case .syncIfStale(let maxAge):
+            itemIDs = try repository
+                .plaidItemsNeedingSync(userID: userID, maxAge: maxAge, asOf: clock())
+                .map(\.id)
+        case .forceSync:
+            itemIDs = try repository.plaidItems(userID: userID).map(\.id)
+        }
+
+        var syncedItemIDs: [String] = []
+        for itemID in itemIDs {
+            _ = try await plaidSyncService.syncItem(id: itemID)
+            syncedItemIDs.append(itemID)
+        }
+
+        return syncedItemIDs
     }
 
     private func createLinkToken(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -171,7 +216,52 @@ actor BackendRouter {
             userID: userID
         )
 
-        return try snapshot(userID: userID)
+        return try cachedSnapshot(userID: userID)
+    }
+}
+
+private enum SnapshotFreshnessPolicy {
+    static let defaultMaxAge: TimeInterval = 300
+
+    case cached
+    case syncIfStale(maxAge: TimeInterval)
+    case forceSync
+
+    init(query: [String: String]) throws {
+        let value = (query["freshness"] ?? "cached").lowercased()
+        switch value {
+        case "cached":
+            self = .cached
+        case "sync_if_stale", "fresh":
+            self = .syncIfStale(maxAge: try Self.maxAge(from: query))
+        case "force_sync", "force":
+            self = .forceSync
+        default:
+            throw HTTPError.badRequest("Unsupported freshness policy '\(value)'.")
+        }
+    }
+
+    var responseValue: String {
+        switch self {
+        case .cached:
+            return "cached"
+        case .syncIfStale:
+            return "sync_if_stale"
+        case .forceSync:
+            return "force_sync"
+        }
+    }
+
+    private static func maxAge(from query: [String: String]) throws -> TimeInterval {
+        guard let rawValue = query["max_age_seconds"], !rawValue.isEmpty else {
+            return defaultMaxAge
+        }
+
+        guard let maxAge = TimeInterval(rawValue), maxAge >= 0 else {
+            throw HTTPError.badRequest("max_age_seconds must be a non-negative number.")
+        }
+
+        return maxAge
     }
 }
 
