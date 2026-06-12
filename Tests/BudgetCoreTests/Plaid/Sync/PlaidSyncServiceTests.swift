@@ -423,6 +423,7 @@ final class PlaidSyncServiceTests: XCTestCase {
         try """
         PLAID_CLIENT_ID=test-client
         PLAID_SANDBOX_SECRET='test-secret'
+        PLAID_REDIRECT_URI=https://example.com/plaid/oauth
         """.write(toFile: path, atomically: true, encoding: .utf8)
 
         let configuration = try PlaidLocalSecretsFile(path: path)
@@ -432,6 +433,7 @@ final class PlaidSyncServiceTests: XCTestCase {
         XCTAssertEqual(configuration.secret, "test-secret")
         XCTAssertEqual(configuration.environment, .sandbox)
         XCTAssertEqual(configuration.webhookURL?.absoluteString, "https://example.com/webhook")
+        XCTAssertEqual(configuration.redirectURI?.absoluteString, "https://example.com/plaid/oauth")
     }
 }
 

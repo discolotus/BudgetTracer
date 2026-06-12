@@ -5,6 +5,7 @@ public struct PlaidConfiguration: Hashable, Sendable {
     public var secret: String
     public var environment: PlaidEnvironment
     public var webhookURL: URL?
+    public var redirectURI: URL?
     public var clientName: String
     public var daysRequested: Int
 
@@ -13,6 +14,7 @@ public struct PlaidConfiguration: Hashable, Sendable {
         secret: String,
         environment: PlaidEnvironment = .sandbox,
         webhookURL: URL? = nil,
+        redirectURI: URL? = nil,
         clientName: String = "BudgetTracer",
         daysRequested: Int = 730
     ) {
@@ -20,6 +22,7 @@ public struct PlaidConfiguration: Hashable, Sendable {
         self.secret = secret
         self.environment = environment
         self.webhookURL = webhookURL
+        self.redirectURI = redirectURI
         self.clientName = clientName
         self.daysRequested = daysRequested
     }

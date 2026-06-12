@@ -46,12 +46,13 @@ public enum PlaidCredentialKeychain {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var cachedSandboxConfiguration: PlaidConfiguration?
 
-    public static func sandboxConfiguration(webhookURL: URL? = nil) throws -> PlaidConfiguration {
+    public static func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
         lock.lock()
         defer { lock.unlock() }
 
         if var cachedSandboxConfiguration {
             cachedSandboxConfiguration.webhookURL = webhookURL
+            cachedSandboxConfiguration.redirectURI = redirectURI
             return cachedSandboxConfiguration
         }
 
@@ -59,7 +60,8 @@ public enum PlaidCredentialKeychain {
             clientID: KeychainStore.password(serviceName: sandboxServiceName, accountName: "PLAID_CLIENT_ID"),
             secret: KeychainStore.password(serviceName: sandboxServiceName, accountName: "PLAID_SANDBOX_SECRET"),
             environment: .sandbox,
-            webhookURL: webhookURL
+            webhookURL: webhookURL,
+            redirectURI: redirectURI
         )
         cachedSandboxConfiguration = configuration
         return configuration

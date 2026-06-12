@@ -41,6 +41,7 @@ public final class PlaidAPIClient: PlaidAPIClientProtocol {
                 countryCodes: ["US"],
                 language: "en",
                 webhook: configuration.webhookURL?.absoluteString,
+                redirectURI: configuration.redirectURI?.absoluteString,
                 transactions: PlaidLinkTransactions(daysRequested: configuration.daysRequested)
             )
         )

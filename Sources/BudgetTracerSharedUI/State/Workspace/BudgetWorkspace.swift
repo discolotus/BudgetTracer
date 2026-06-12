@@ -91,6 +91,14 @@ public final class BudgetWorkspace: ObservableObject {
         }
     }
 
+    public func cancelPlaidLink() {
+        plaidLinkState = .idle
+    }
+
+    public func failPlaidLink(message: String) {
+        plaidLinkState = .failed(message: message)
+    }
+
     public func setTransaction(_ transactionID: BudgetTransaction.ID, isRecurring: Bool) {
         if isRecurring {
             snapshot.recurringTransactionIDs.insert(transactionID)
