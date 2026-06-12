@@ -7,7 +7,7 @@ public struct PlaidLocalSecretsFile {
         self.path = path
     }
 
-    public func sandboxConfiguration(webhookURL: URL? = nil) throws -> PlaidConfiguration {
+    public func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
         let values = try readValues()
         guard let clientID = values["PLAID_CLIENT_ID"], !clientID.isEmpty else {
             throw PlaidLocalSecretsFileError.missingKey("PLAID_CLIENT_ID")
@@ -22,7 +22,8 @@ public struct PlaidLocalSecretsFile {
             clientID: clientID,
             secret: secret,
             environment: .sandbox,
-            webhookURL: webhookURL
+            webhookURL: webhookURL,
+            redirectURI: redirectURI ?? values["PLAID_REDIRECT_URI"].flatMap(URL.init(string:))
         )
     }
 

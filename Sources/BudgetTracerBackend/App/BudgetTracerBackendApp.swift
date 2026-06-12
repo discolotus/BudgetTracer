@@ -20,9 +20,15 @@ struct BudgetTracerBackendApp {
                     throw BackendConfigurationError.missingPlaidSecretsPath
                 }
                 return try PlaidLocalSecretsFile(path: path)
-                    .sandboxConfiguration(webhookURL: configuration.webhookURL)
+                    .sandboxConfiguration(
+                        webhookURL: configuration.webhookURL,
+                        redirectURI: configuration.redirectURI
+                    )
             case .keychain:
-                return try PlaidCredentialKeychain.sandboxConfiguration(webhookURL: configuration.webhookURL)
+                return try PlaidCredentialKeychain.sandboxConfiguration(
+                    webhookURL: configuration.webhookURL,
+                    redirectURI: configuration.redirectURI
+                )
             }
         }
         let tokenVault: PlaidTokenVault = switch configuration.plaidTokenVault {

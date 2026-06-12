@@ -9,6 +9,7 @@ struct PlaidLinkTokenRequest: Encodable {
     var countryCodes: [String]
     var language: String
     var webhook: String?
+    var redirectURI: String?
     var transactions: PlaidLinkTransactions
 
     enum CodingKeys: String, CodingKey {
@@ -20,6 +21,7 @@ struct PlaidLinkTokenRequest: Encodable {
         case countryCodes = "country_codes"
         case language
         case webhook
+        case redirectURI = "redirect_uri"
         case transactions
     }
 }

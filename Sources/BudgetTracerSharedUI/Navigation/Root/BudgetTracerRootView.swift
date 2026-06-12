@@ -5,6 +5,7 @@ public struct BudgetTracerRootView: View {
     @StateObject private var workspace: BudgetWorkspace
     @SceneStorage("BudgetTracer.selectedSection") private var selectedSectionID = BudgetSection.overview.rawValue
     @State private var isShowingSettings = false
+    @State private var plaidLinkToken: String?
 
     @MainActor
     public init() {
@@ -35,6 +36,23 @@ public struct BudgetTracerRootView: View {
                 #endif
         }
         .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
+        .budgetTracerPlaidLinkSheet(
+            linkToken: $plaidLinkToken,
+            onSuccess: { publicToken, institutionID in
+                Task {
+                    await workspace.finishPlaidLink(
+                        publicToken: publicToken,
+                        institutionID: institutionID
+                    )
+                }
+            },
+            onExit: {
+                workspace.cancelPlaidLink()
+            },
+            onFailure: { message in
+                workspace.failPlaidLink(message: message)
+            }
+        )
         .task {
             if case .notConnected = workspace.connectionState {
                 return
@@ -111,7 +129,9 @@ public struct BudgetTracerRootView: View {
                 connectionState: workspace.connectionState,
                 plaidLinkState: workspace.plaidLinkState,
                 preparePlaidLink: {
-                    Task { await workspace.preparePlaidLink() }
+                    Task {
+                        plaidLinkToken = await workspace.preparePlaidLink()
+                    }
                 },
                 createSandboxItem: {
                     Task { await workspace.createSandboxPlaidItem() }
@@ -167,6 +187,80 @@ private extension View {
                     }
             }
         }
+        #endif
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func budgetTracerPlaidLinkSheet(
+        linkToken: Binding<String?>,
+        onSuccess: @escaping (String, String?) -> Void,
+        onExit: @escaping () -> Void,
+        onFailure: @escaping (String) -> Void
+    ) -> some View {
+        #if os(iOS)
+        self.sheet(
+            isPresented: Binding(
+                get: { linkToken.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented, linkToken.wrappedValue != nil {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    }
+                }
+            )
+        ) {
+            if let token = linkToken.wrappedValue {
+                BudgetTracerPlaidLinkSheet(
+                    linkToken: token,
+                    onSuccess: { publicToken, institutionID in
+                        linkToken.wrappedValue = nil
+                        onSuccess(publicToken, institutionID)
+                    },
+                    onExit: {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    },
+                    onFailure: { message in
+                        linkToken.wrappedValue = nil
+                        onFailure(message)
+                    }
+                )
+            }
+        }
+        #elseif os(macOS)
+        self.sheet(
+            isPresented: Binding(
+                get: { linkToken.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented, linkToken.wrappedValue != nil {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    }
+                }
+            )
+        ) {
+            if let token = linkToken.wrappedValue {
+                BudgetTracerPlaidWebLinkSheet(
+                    linkToken: token,
+                    onSuccess: { publicToken, institutionID in
+                        linkToken.wrappedValue = nil
+                        onSuccess(publicToken, institutionID)
+                    },
+                    onExit: {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    },
+                    onFailure: { message in
+                        linkToken.wrappedValue = nil
+                        onFailure(message)
+                    }
+                )
+            }
+        }
+        #else
+        self
         #endif
     }
 }

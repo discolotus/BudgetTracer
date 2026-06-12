@@ -14,6 +14,8 @@ The expected credential file shape is:
 ```bash
 PLAID_CLIENT_ID=...
 PLAID_SANDBOX_SECRET=...
+# Optional, required for production OAuth institutions on iOS and macOS.
+PLAID_REDIRECT_URI=https://your-domain.example/plaid/oauth
 ```
 
 You can override the credential path:
@@ -27,6 +29,14 @@ You can override the local access-token vault path:
 ```bash
 export BUDGETTRACER_PLAID_TOKEN_VAULT_PATH=/path/to/plaid_access_tokens.json
 ```
+
+You can also provide the Plaid redirect URI through the backend environment instead of the credential file:
+
+```bash
+export PLAID_REDIRECT_URI=https://your-domain.example/plaid/oauth
+```
+
+For OAuth flows, this URI must be registered in the Plaid Dashboard. iOS also needs this URI set up as a Universal Link. macOS runs Plaid Link in a `WKWebView`; when Plaid redirects back with `oauth_state_id`, the app intercepts that full URL and reinitializes Link with `receivedRedirectUri`.
 
 ## Keychain Opt-In
 

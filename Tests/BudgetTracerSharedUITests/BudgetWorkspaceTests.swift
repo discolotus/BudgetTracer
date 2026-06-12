@@ -107,6 +107,35 @@ final class BudgetWorkspaceTests: XCTestCase {
         XCTAssertEqual(lastSyncedAt, syncedAt)
     }
 
+    func testCancelPlaidLinkReturnsLinkStateToIdle() async throws {
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            linkToken: "link-sandbox-test"
+        )
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+        await workspace.preparePlaidLink()
+
+        workspace.cancelPlaidLink()
+
+        XCTAssertEqual(workspace.plaidLinkState, .idle)
+    }
+
+    func testFailPlaidLinkStoresFailureMessage() async throws {
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: RecordingFinancialDataProvider(snapshot: makeSnapshot(lastSuccessfulSyncAt: nil)),
+            userDefaults: try makeUserDefaults()
+        )
+
+        workspace.failPlaidLink(message: "Link token expired.")
+
+        XCTAssertEqual(workspace.plaidLinkState, .failed(message: "Link token expired."))
+    }
+
     private func makeSnapshot(lastSuccessfulSyncAt: Date?) -> BudgetSnapshot {
         BudgetSnapshot(
             institutions: [Institution(id: "bank", name: "Bank")],
