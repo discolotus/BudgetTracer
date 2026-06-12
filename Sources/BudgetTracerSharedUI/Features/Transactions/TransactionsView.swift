@@ -19,13 +19,29 @@ struct TransactionsView: View {
     private var searchText = ""
 
     var body: some View {
-        List {
-            ForEach<[TransactionRow], TransactionRow.ID, TransactionRowView>(transactionRows) { row in
-                TransactionRowView(row: row)
+        ScrollView {
+            VStack(spacing: 0) {
+                if transactionRows.isEmpty {
+                    Text("No matching transactions.")
+                        .font(.subheadline)
+                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                } else {
+                    ForEach(transactionRows.indices, id: \.self) { index in
+                        TransactionRowView(row: transactionRows[index])
+
+                        if index < transactionRows.index(before: transactionRows.endIndex) {
+                            ThemeRowDivider()
+                                .padding(.leading, 16)
+                        }
+                    }
+                }
             }
+            .budgetTracerCard()
+            .padding()
         }
-        .scrollContentBackground(.hidden)
-        .background(BudgetTracerStyle.screenBackground)
+        .background(BudgetTracerStyle.canvas)
         .searchable(text: $searchText, placement: .automatic, prompt: "Search transactions")
     }
 
@@ -60,21 +76,25 @@ private struct TransactionRowView: View {
                 amountText
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var transactionLabel: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(row.merchantName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BudgetTracerStyle.ink)
             Text(row.postedAt.formatted(date: .abbreviated, time: .omitted))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BudgetTracerStyle.inkMuted)
         }
     }
 
     private var amountText: some View {
         Text(row.amount.formatted)
-            .foregroundStyle(row.amount.isExpense ? Color.primary : BudgetTracerStyle.positive)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(row.amount.isExpense ? BudgetTracerStyle.ink : BudgetTracerStyle.positive)
             .monospacedDigit()
     }
 }

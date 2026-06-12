@@ -9,48 +9,69 @@ struct AccountsView: View {
     var resetAccountOverride: (FinancialAccount.ID) -> Void = { _ in }
 
     var body: some View {
-        List {
-            ForEach(snapshot.accounts, id: \.id) { account in
-                VStack(alignment: .leading, spacing: 12) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) {
-                            accountLabel(for: account)
-                            Spacer()
-                            balanceText(for: account)
-                        }
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(snapshot.accounts.indices, id: \.self) { index in
+                    let account = snapshot.accounts[index]
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            accountLabel(for: account)
-                            balanceText(for: account)
-                        }
+                    accountRow(for: account)
+
+                    if index < snapshot.accounts.index(before: snapshot.accounts.endIndex) {
+                        ThemeRowDivider()
+                            .padding(.leading, 16)
                     }
-
-                    accountControls(for: account)
                 }
-                .padding(.vertical, 8)
             }
+            .budgetTracerCard()
+            .padding()
         }
-        .scrollContentBackground(.hidden)
-        .background(BudgetTracerStyle.screenBackground)
+        .background(BudgetTracerStyle.canvas)
+    }
+
+    private func accountRow(for account: FinancialAccount) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    accountLabel(for: account)
+                    Spacer()
+                    balanceText(for: account)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    accountLabel(for: account)
+                    balanceText(for: account)
+                }
+            }
+
+            accountControls(for: account)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 
     private func accountLabel(for account: FinancialAccount) -> some View {
         HStack(spacing: 12) {
             Image(systemName: iconName(for: account.kind))
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
+                .font(.subheadline)
+                .foregroundStyle(BudgetTracerStyle.accent)
+                .frame(width: 34, height: 34)
+                .background(BudgetTracerStyle.accentSoft, in: Circle())
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(account.name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Text(account.kind.displayName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
         }
     }
 
     private func balanceText(for account: FinancialAccount) -> some View {
         Text(account.currentBalance.formatted)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(BudgetTracerStyle.ink)
             .monospacedDigit()
     }
 
@@ -69,6 +90,7 @@ struct AccountsView: View {
             }
         }
         .font(.subheadline)
+        .tint(BudgetTracerStyle.accent)
     }
 
     private func classificationPicker(for account: FinancialAccount) -> some View {
@@ -123,7 +145,7 @@ struct AccountsView: View {
         case .checking:
             return "building.columns"
         case .savings:
-            return "safe"
+            return "banknote"
         case .creditCard:
             return "creditcard"
         case .investment:
