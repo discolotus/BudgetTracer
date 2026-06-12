@@ -7,12 +7,26 @@ public enum PlaidConnectionState: Hashable, Sendable {
     case failed(message: String)
 }
 
+public enum BudgetSnapshotFreshnessPolicy: Hashable, Sendable {
+    case cached
+    case syncIfStale(maxAge: TimeInterval)
+    case forceSync
+}
+
 public protocol FinancialDataProvider: Sendable {
     func fetchBudgetSnapshot() async throws -> BudgetSnapshot
+    func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot
+    func createPlaidLinkToken() async throws -> String
+    func exchangePlaidPublicToken(_ publicToken: String, institutionID: String?) async throws -> BudgetSnapshot
+    func createSandboxPlaidItem(institutionID: String?) async throws -> BudgetSnapshot
     func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot
 }
 
 public extension FinancialDataProvider {
+    func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot {
+        try await fetchBudgetSnapshot()
+    }
+
     func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot {
         var snapshot = try await fetchBudgetSnapshot()
         if isRegularMonthly {
@@ -21,6 +35,18 @@ public extension FinancialDataProvider {
             snapshot.recurringTransactionIDs.remove(transactionID)
         }
         return snapshot
+    }
+
+    func createPlaidLinkToken() async throws -> String {
+        throw PlaidIntegrationError.requiresBackend
+    }
+
+    func exchangePlaidPublicToken(_ publicToken: String, institutionID: String?) async throws -> BudgetSnapshot {
+        throw PlaidIntegrationError.requiresBackend
+    }
+
+    func createSandboxPlaidItem(institutionID: String? = nil) async throws -> BudgetSnapshot {
+        throw PlaidIntegrationError.requiresBackend
     }
 }
 

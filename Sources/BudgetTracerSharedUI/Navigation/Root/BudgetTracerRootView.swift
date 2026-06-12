@@ -4,6 +4,7 @@ import SwiftUI
 public struct BudgetTracerRootView: View {
     @StateObject private var workspace: BudgetWorkspace
     @SceneStorage("BudgetTracer.selectedSection") private var selectedSectionID = BudgetSection.overview.rawValue
+    @State private var isShowingSettings = false
 
     @MainActor
     public init() {
@@ -25,18 +26,23 @@ public struct BudgetTracerRootView: View {
         } detail: {
             detailView
                 .navigationTitle(selectedSection.title)
+                .toolbar {
+                    primaryToolbarItems
+                }
+                .background(BudgetTracerStyle.screenBackground.ignoresSafeArea())
                 #if os(macOS)
                 .frame(minWidth: 720, minHeight: 520)
                 #endif
         }
+        .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
         .task {
             if case .notConnected = workspace.connectionState {
                 return
             }
-            await workspace.refresh()
+            await workspace.refresh(forceSync: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .budgetTracerRefreshRequested)) { _ in
-            Task { await workspace.refresh() }
+            refreshWorkspace()
         }
         .onAppear {
             if let initialSectionID = ProcessInfo.processInfo.environment["BUDGETTRACER_INITIAL_SECTION"],
@@ -46,8 +52,47 @@ public struct BudgetTracerRootView: View {
         }
     }
 
+    private var isRefreshing: Bool {
+        if case .connecting = workspace.connectionState {
+            return true
+        }
+
+        return false
+    }
+
     private var selectedSection: BudgetSection {
         BudgetSection(rawValue: selectedSectionID) ?? .overview
+    }
+
+    private func refreshWorkspace(forceSync: Bool = true) {
+        Task { await workspace.refresh(forceSync: forceSync) }
+    }
+
+    @ToolbarContentBuilder
+    private var primaryToolbarItems: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                refreshWorkspace()
+            } label: {
+                Label("Refresh Financial Data", systemImage: "arrow.clockwise")
+            }
+            .disabled(isRefreshing)
+            .keyboardShortcut("r", modifiers: [.command])
+            .help("Refresh Financial Data")
+
+            #if os(macOS)
+            SettingsLink {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .help("Settings")
+            #else
+            Button {
+                isShowingSettings = true
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            #endif
+        }
     }
 
     private var selection: Binding<String?> {
@@ -61,20 +106,68 @@ public struct BudgetTracerRootView: View {
     private var detailView: some View {
         switch selectedSection {
         case .overview:
-            OverviewView(snapshot: workspace.snapshot, connectionState: workspace.connectionState) {
-                Task { await workspace.refresh() }
-            }
+            OverviewView(
+                snapshot: workspace.displaySnapshot,
+                connectionState: workspace.connectionState,
+                plaidLinkState: workspace.plaidLinkState,
+                preparePlaidLink: {
+                    Task { await workspace.preparePlaidLink() }
+                },
+                createSandboxItem: {
+                    Task { await workspace.createSandboxPlaidItem() }
+                },
+                refresh: {
+                    Task { await workspace.refresh(forceSync: true) }
+                }
+            )
         case .normalizedMonth:
-            NormalizedMonthView(snapshot: workspace.snapshot) { transactionID, isRecurring in
+            NormalizedMonthView(
+                snapshot: workspace.displaySnapshot,
+                connectionState: workspace.connectionState
+            ) { transactionID, isRecurring in
                 workspace.setTransaction(transactionID, isRecurring: isRecurring)
             }
         case .accounts:
-            AccountsView(snapshot: workspace.snapshot)
+            AccountsView(
+                snapshot: workspace.displaySnapshot,
+                accountOverrides: workspace.accountOverrides,
+                setAccountKind: { accountID, kind in
+                    workspace.setAccount(accountID, kind: kind)
+                },
+                setAccountAvailableCash: { accountID, includesInAvailableCash in
+                    workspace.setAccount(accountID, includesInAvailableCash: includesInAvailableCash)
+                },
+                resetAccountOverride: { accountID in
+                    workspace.resetAccountOverride(accountID)
+                }
+            )
         case .transactions:
-            TransactionsView(snapshot: workspace.snapshot)
+            TransactionsView(snapshot: workspace.displaySnapshot)
         case .budgets:
-            BudgetsView(snapshot: workspace.snapshot)
+            BudgetsView(snapshot: workspace.displaySnapshot)
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func budgetTracerSettingsSheet(isPresented: Binding<Bool>) -> some View {
+        #if os(macOS)
+        self
+        #else
+        self.sheet(isPresented: isPresented) {
+            NavigationStack {
+                BudgetTracerSettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                isPresented.wrappedValue = false
+                            }
+                        }
+                    }
+            }
+        }
+        #endif
     }
 }
 
@@ -96,7 +189,7 @@ private enum BudgetSection: String, CaseIterable, Identifiable {
         case .overview:
             return "Overview"
         case .normalizedMonth:
-            return "Normalized Month"
+            return "Balances"
         case .accounts:
             return "Accounts"
         case .transactions:

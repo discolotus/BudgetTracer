@@ -10,11 +10,11 @@ BudgetTracer needs to become both an iOS app and a macOS app. The two clients sh
 
 ## Decision
 
-Use SwiftUI across iOS and macOS with shared packages for the domain model and reusable UI surfaces. Keep Plaid behind a `FinancialDataProvider` protocol. Start with a runnable macOS shell for local iteration and add installable Xcode app targets when platform capabilities and signing requirements are introduced.
+Use SwiftUI across iOS and macOS with shared packages for the domain model and reusable UI surfaces. Keep Plaid behind a `FinancialDataProvider` protocol. Keep a runnable SwiftPM macOS shell for local iteration, and maintain generated Xcode iOS and macOS app targets for simulator, device, and release-oriented builds.
 
 ## Consequences
 
 - Budget calculations can be tested without UI or Plaid.
 - Plaid SDK choices can change without rewriting views.
 - iOS and macOS screens can share composition while still allowing platform-specific shell behavior.
-- A full Xcode project will be needed before simulator/device distribution, signing, entitlements, or App Store packaging.
+- `project.yml` is the source of truth for the generated Xcode project used by simulator, device, signing, entitlements, and App Store packaging work.

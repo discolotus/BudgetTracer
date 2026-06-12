@@ -47,15 +47,17 @@ PLIST
 
 open_app() {
   OPEN_ARGS=(-n -F)
-  if [ -n "${BUDGETTRACER_USE_BACKEND:-}" ]; then
-    OPEN_ARGS+=(--env "BUDGETTRACER_USE_BACKEND=$BUDGETTRACER_USE_BACKEND")
-  fi
-  if [ -n "${BUDGETTRACER_BACKEND_URL:-}" ]; then
-    OPEN_ARGS+=(--env "BUDGETTRACER_BACKEND_URL=$BUDGETTRACER_BACKEND_URL")
-  fi
-  if [ -n "${BUDGETTRACER_INITIAL_SECTION:-}" ]; then
-    OPEN_ARGS+=(--env "BUDGETTRACER_INITIAL_SECTION=$BUDGETTRACER_INITIAL_SECTION")
-  fi
+  for variable in \
+    BUDGETTRACER_USE_BACKEND \
+    BUDGETTRACER_BACKEND_URL \
+    BUDGETTRACER_INITIAL_SECTION \
+    BUDGETTRACER_INITIAL_MONTH \
+    BUDGETTRACER_INITIAL_CASH_FLOW_BASIS \
+    BUDGETTRACER_INITIAL_DATE_RANGE; do
+    if [ -n "${!variable:-}" ]; then
+      OPEN_ARGS+=(--env "$variable=${!variable}")
+    fi
+  done
 
   /usr/bin/open "${OPEN_ARGS[@]}" "$APP_BUNDLE"
 }

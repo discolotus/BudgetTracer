@@ -8,7 +8,22 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
     }
 
     public func fetchBudgetSnapshot() async throws -> BudgetSnapshot {
-        let url = baseURL.appendingPathComponent("snapshot")
+        try await fetchBudgetSnapshot(freshnessPolicy: .cached)
+    }
+
+    public func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot {
+        guard var components = URLComponents(
+            url: baseURL.appendingPathComponent("snapshot"),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw BackendFinancialDataProviderError.invalidResponse
+        }
+        components.queryItems = freshnessPolicy.backendQueryItems
+
+        guard let url = components.url else {
+            throw BackendFinancialDataProviderError.invalidResponse
+        }
+
         let (data, response) = try await URLSession.shared.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
@@ -18,6 +33,33 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
+    }
+
+    public func createPlaidLinkToken() async throws -> String {
+        let response: BackendLinkTokenResponse = try await postJSON(
+            path: "plaid/link-token",
+            body: BackendUserScopedRequest()
+        )
+        return response.linkToken
+    }
+
+    public func exchangePlaidPublicToken(_ publicToken: String, institutionID: String?) async throws -> BudgetSnapshot {
+        let response: BackendExchangePublicTokenResponse = try await postJSON(
+            path: "plaid/exchange-public-token",
+            body: BackendExchangePublicTokenRequest(
+                publicToken: publicToken,
+                institutionID: institutionID
+            )
+        )
+        return response.snapshot.snapshot
+    }
+
+    public func createSandboxPlaidItem(institutionID: String? = nil) async throws -> BudgetSnapshot {
+        let response: BackendSandboxItemResponse = try await postJSON(
+            path: "plaid/sandbox/create-item",
+            body: BackendCreateSandboxItemRequest(institutionID: institutionID)
+        )
+        return response.snapshot.snapshot
     }
 
     public func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot {
@@ -41,6 +83,26 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
     }
+
+    private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
+        path: String,
+        body: RequestBody
+    ) async throws -> ResponseBody {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw BackendFinancialDataProviderError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ResponseBody.self, from: data)
+    }
 }
 
 public enum BackendFinancialDataProviderError: Error, LocalizedError {
@@ -60,6 +122,7 @@ private struct BackendSnapshotResponse: Decodable {
     var categories: [BackendCategory]
     var transactions: [BackendTransaction]
     var recurringTransactionIDs: [String]
+    var lastSuccessfulSyncAt: Date?
 
     var snapshot: BudgetSnapshot {
         BudgetSnapshot(
@@ -67,7 +130,8 @@ private struct BackendSnapshotResponse: Decodable {
             accounts: accounts.map(\.account),
             categories: categories.map(\.category),
             transactions: transactions.map(\.transaction),
-            recurringTransactionIDs: Set(recurringTransactionIDs)
+            recurringTransactionIDs: Set(recurringTransactionIDs),
+            lastSuccessfulSyncAt: lastSuccessfulSyncAt
         )
     }
 
@@ -77,6 +141,23 @@ private struct BackendSnapshotResponse: Decodable {
         case categories
         case transactions
         case recurringTransactionIDs = "recurring_transaction_ids"
+        case lastSuccessfulSyncAt = "last_successful_sync_at"
+    }
+}
+
+private extension BudgetSnapshotFreshnessPolicy {
+    var backendQueryItems: [URLQueryItem]? {
+        switch self {
+        case .cached:
+            return nil
+        case .syncIfStale(let maxAge):
+            return [
+                URLQueryItem(name: "freshness", value: "sync_if_stale"),
+                URLQueryItem(name: "max_age_seconds", value: String(maxAge))
+            ]
+        case .forceSync:
+            return [URLQueryItem(name: "freshness", value: "force_sync")]
+        }
     }
 }
 
@@ -88,6 +169,52 @@ private struct UpdateRegularMonthlyRequest: Encodable {
         case transactionID = "transaction_id"
         case isRegularMonthly = "is_regular_monthly"
     }
+}
+
+private struct BackendUserScopedRequest: Encodable {
+    var userID: String?
+
+    init(userID: String? = nil) {
+        self.userID = userID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+    }
+}
+
+private struct BackendLinkTokenResponse: Decodable {
+    var linkToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case linkToken = "link_token"
+    }
+}
+
+private struct BackendExchangePublicTokenRequest: Encodable {
+    var publicToken: String
+    var institutionID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case publicToken = "public_token"
+        case institutionID = "institution_id"
+    }
+}
+
+private struct BackendExchangePublicTokenResponse: Decodable {
+    var snapshot: BackendSnapshotResponse
+}
+
+private struct BackendCreateSandboxItemRequest: Encodable {
+    var institutionID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case institutionID = "institution_id"
+    }
+}
+
+private struct BackendSandboxItemResponse: Decodable {
+    var snapshot: BackendSnapshotResponse
 }
 
 private struct BackendInstitution: Decodable {

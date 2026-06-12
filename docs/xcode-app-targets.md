@@ -74,13 +74,12 @@ This builds:
 - `BudgetTracer macOS` for macOS
 - `BudgetTracer iOS` for generic iOS Simulator
 
-## Current Environment Note
+## CI Coverage
 
-On this machine, `xcodebuild` currently fails before project evaluation because Xcode cannot load Apple's `IDESimulatorFoundation` plugin:
+The repository includes a GitHub Actions workflow at:
 
 ```text
-Symbol not found ... DVTDownloads
-xcodebuild failed to load a required plug-in
+.github/workflows/ci.yml
 ```
 
-That is an Xcode installation/system-content issue, not a project configuration error. The generated project, app shell files, Info.plists, local package references, and shared schemes are present and inspectable.
+The workflow runs `swift test` and `./script/build_xcode_apps.sh` on macOS for pushes to `main` and pull requests. Publishing is intentionally not automated yet because release signing, provisioning profiles, and App Store Connect credentials are not present in the repository.

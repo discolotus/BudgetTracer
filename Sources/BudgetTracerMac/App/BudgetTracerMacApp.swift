@@ -1,4 +1,3 @@
-import BudgetCore
 import BudgetTracerSharedUI
 import SwiftUI
 
@@ -6,16 +5,28 @@ import SwiftUI
 import AppKit
 #endif
 
+// Keep this file mirrored across Apps/BudgetTracerMac and Sources/BudgetTracerMac.
+// MacAppShellParityTests fails if the Xcode and SwiftPM macOS shells drift.
 @main
 struct BudgetTracerMacApp: App {
     #if os(macOS)
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @NSApplicationDelegateAdaptor(BudgetTracerMacAppDelegate.self) private var appDelegate
+    #endif
+
+    #if os(macOS)
+    init() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            BudgetTracerMacWindowCoordinator.shared.openMainWindowIfNeeded()
+        }
+    }
     #endif
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("BudgetTracer", id: "main") {
             BudgetTracerRootView(workspace: workspace)
         }
+        .defaultSize(width: 1180, height: 860)
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Refresh Financial Data") {
@@ -26,44 +37,12 @@ struct BudgetTracerMacApp: App {
         }
 
         Settings {
-            Form {
-                Text("Demo mode uses sample data. Plaid credentials are only used by the local backend when backend mode is enabled.")
-            }
-            .padding()
-            .frame(width: 420)
+            BudgetTracerSettingsView()
         }
     }
 
     @MainActor
     private var workspace: BudgetWorkspace {
-        if Self.usesBackend {
-            return BudgetWorkspace(
-                connectionState: .connecting,
-                dataProvider: BackendFinancialDataProvider(baseURL: backendURL)
-            )
-        }
-
-        return BudgetWorkspace(
-            connectionState: .connected(institutionCount: SampleBudgetData.snapshot.institutions.count, lastSyncedAt: nil),
-            dataProvider: SampleFinancialDataProvider()
-        )
-    }
-
-    private static var usesBackend: Bool {
-        ProcessInfo.processInfo.environment["BUDGETTRACER_USE_BACKEND"] == "1"
-    }
-
-    private var backendURL: URL {
-        ProcessInfo.processInfo.environment["BUDGETTRACER_BACKEND_URL"].flatMap(URL.init(string:))
-            ?? URL(string: "http://127.0.0.1:8790")!
+        BudgetTracerAppWorkspaceFactory.make()
     }
 }
-
-#if os(macOS)
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
-#endif
