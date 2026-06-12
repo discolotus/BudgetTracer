@@ -18,24 +18,9 @@ public struct BudgetTracerRootView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            List(BudgetSection.allCases, selection: selection) { section in
-                Label(section.title, systemImage: section.systemImage)
-                    .tag(section.rawValue)
-            }
-            .navigationTitle("BudgetTracer")
-        } detail: {
-            detailView
-                .navigationTitle(selectedSection.title)
-                .toolbar {
-                    primaryToolbarItems
-                }
-                .background(BudgetTracerStyle.screenBackground.ignoresSafeArea())
-                #if os(macOS)
-                .frame(minWidth: 720, minHeight: 520)
-                #endif
-        }
-        .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
+        navigationShell
+            .tint(BudgetTracerStyle.accent)
+            .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
         .budgetTracerPlaidLinkSheet(
             linkToken: $plaidLinkToken,
             onSuccess: { publicToken, institutionID in
@@ -68,6 +53,42 @@ public struct BudgetTracerRootView: View {
                 selectedSectionID = initialSectionID
             }
         }
+    }
+
+    @ViewBuilder
+    private var navigationShell: some View {
+        #if os(iOS)
+        TabView(selection: selection) {
+            ForEach(BudgetSection.allCases) { section in
+                NavigationStack {
+                    sectionView(for: section)
+                        .navigationTitle(section.title)
+                        .toolbar { primaryToolbarItems }
+                        .toolbarBackground(BudgetTracerStyle.canvas, for: .navigationBar)
+                        .background(BudgetTracerStyle.canvas.ignoresSafeArea())
+                }
+                .tabItem {
+                    Label(section.title, systemImage: section.systemImage)
+                }
+                .tag(section.rawValue as String?)
+            }
+        }
+        #else
+        NavigationSplitView {
+            List(BudgetSection.allCases, selection: selection) { section in
+                Label(section.title, systemImage: section.systemImage)
+                    .tag(section.rawValue)
+            }
+            .listStyle(.sidebar)
+            .navigationTitle("BudgetTracer")
+        } detail: {
+            sectionView(for: selectedSection)
+                .navigationTitle(selectedSection.title)
+                .toolbar { primaryToolbarItems }
+                .background(BudgetTracerStyle.canvas.ignoresSafeArea())
+                .frame(minWidth: 720, minHeight: 520)
+        }
+        #endif
     }
 
     private var isRefreshing: Bool {
@@ -121,8 +142,8 @@ public struct BudgetTracerRootView: View {
     }
 
     @ViewBuilder
-    private var detailView: some View {
-        switch selectedSection {
+    private func sectionView(for section: BudgetSection) -> some View {
+        switch section {
         case .overview:
             OverviewView(
                 snapshot: workspace.displaySnapshot,
@@ -296,13 +317,13 @@ private enum BudgetSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .overview:
-            return "chart.pie"
+            return "square.grid.2x2"
         case .normalizedMonth:
-            return "waveform.path.ecg"
+            return "chart.line.uptrend.xyaxis"
         case .accounts:
             return "building.columns"
         case .transactions:
-            return "list.bullet.rectangle"
+            return "list.bullet"
         case .budgets:
             return "target"
         }

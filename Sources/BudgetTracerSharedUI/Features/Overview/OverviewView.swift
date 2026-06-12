@@ -11,7 +11,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 OverviewHeroCard(
                     snapshot: snapshot,
                     connectionState: connectionState,
@@ -21,23 +21,27 @@ struct OverviewView: View {
                     refresh: refresh
                 )
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 16)], spacing: 16) {
-                    MetricTile(title: "Income", value: snapshot.monthlyIncome.formatted, systemImage: "arrow.down.circle")
-                    MetricTile(title: "Spending", value: snapshot.monthlySpending.formatted, systemImage: "arrow.up.circle")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 14)], spacing: 14) {
+                    MetricTile(title: "Income", value: snapshot.monthlyIncome.formatted, valueColor: BudgetTracerStyle.positive)
+                    MetricTile(title: "Spending", value: snapshot.monthlySpending.formatted, valueColor: BudgetTracerStyle.ink)
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Spending by Category")
-                        .font(.headline)
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeader("Spending by category")
 
-                    ForEach(snapshot.spendingByCategory(), id: \.id) { spend in
-                        CategorySpendRow(spend: spend, maxMinorUnits: maxCategorySpend)
+                    VStack(spacing: 14) {
+                        ForEach(snapshot.spendingByCategory(), id: \.id) { spend in
+                            CategorySpendRow(spend: spend, maxMinorUnits: maxCategorySpend)
+                        }
                     }
                 }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .budgetTracerCard()
             }
             .padding()
         }
-        .background(BudgetTracerStyle.screenBackground)
+        .background(BudgetTracerStyle.canvas)
     }
 
     private var maxCategorySpend: Int64 {
@@ -59,47 +63,47 @@ private struct OverviewHeroCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .center) {
-                Text("NET POSITION")
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(BudgetTracerStyle.subduedText)
+                EyebrowText("Net position")
 
                 Spacer()
 
                 Button(action: refresh) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
-                        .background(BudgetTracerStyle.accent, in: Circle())
-                        .foregroundStyle(.white)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BudgetTracerStyle.ink)
+                        .frame(width: 34, height: 34)
+                        .background(BudgetTracerStyle.surfaceSunken, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .help("Refresh Financial Data")
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Cash after cards")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
+            VStack(alignment: .leading, spacing: 4) {
                 Text(netPosition.formatted)
-                    .font(.system(size: 42, weight: .semibold, design: .default))
+                    .font(.system(size: 44, weight: .semibold))
+                    .tracking(-0.8)
                     .minimumScaleFactor(0.72)
                     .monospacedDigit()
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .contentTransition(.numericText())
+                    .animation(BudgetTracerStyle.spring, value: netPosition.formatted)
+
+                Text("Cash after cards")
+                    .font(.subheadline)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
-                    BalanceChip(title: "Checking cash", value: snapshot.availableCash.formatted)
-                    BalanceChip(title: "Card debt", value: snapshot.creditDebt.absolute.formatted)
-                }
+            HStack(spacing: 0) {
+                HeroStat(title: "Checking cash", value: snapshot.availableCash.formatted)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    BalanceChip(title: "Checking cash", value: snapshot.availableCash.formatted)
-                    BalanceChip(title: "Card debt", value: snapshot.creditDebt.absolute.formatted)
-                }
+                Rectangle()
+                    .fill(BudgetTracerStyle.hairline)
+                    .frame(width: 1, height: 32)
+
+                HeroStat(title: "Card debt", value: snapshot.creditDebt.absolute.formatted)
+                    .padding(.leading, 16)
             }
 
             if showsPlaidControls || plaidLinkStatusText != nil {
@@ -127,7 +131,8 @@ private struct OverviewHeroCard: View {
 
         }
         .padding(24)
-        .budgetTracerCard(cornerRadius: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .budgetTracerCard(cornerRadius: 26)
     }
 
     @ViewBuilder
@@ -135,14 +140,14 @@ private struct OverviewHeroCard: View {
         Button(action: preparePlaidLink) {
             Label("Connect Account", systemImage: "link.badge.plus")
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.themeProminent)
         .disabled(isPlaidActionInProgress)
         .help("Connect Account")
 
         Button(action: createSandboxItem) {
             Label("Sandbox Bank", systemImage: "building.columns")
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.themeTonal)
         .disabled(isPlaidActionInProgress)
         .help("Create Sandbox Bank")
     }
@@ -187,54 +192,52 @@ private struct OverviewHeroCard: View {
     private var plaidLinkStatusColor: Color {
         switch plaidLinkState {
         case .failed:
-            return .red
+            return BudgetTracerStyle.caution
         case .succeeded:
-            return .green
+            return BudgetTracerStyle.positive
         case .idle, .preparing, .ready, .exchanging:
-            return BudgetTracerStyle.subduedText
+            return BudgetTracerStyle.inkMuted
         }
     }
 }
 
-private struct BalanceChip: View {
+private struct HeroStat: View {
     var title: String
     var value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BudgetTracerStyle.inkMuted)
             Text(value)
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
+                .foregroundStyle(BudgetTracerStyle.ink)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(BudgetTracerStyle.accentSoft, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
 private struct MetricTile: View {
     var title: String
     var value: String
-    var systemImage: String
+    var valueColor: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            EyebrowText(title)
             Text(value)
                 .font(.title2.weight(.semibold))
                 .minimumScaleFactor(0.82)
                 .monospacedDigit()
+                .foregroundStyle(valueColor)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .budgetTracerCard(cornerRadius: 22)
+        .budgetTracerCard(cornerRadius: 20)
     }
 }
 
@@ -243,24 +246,27 @@ private struct CategorySpendRow: View {
     var maxMinorUnits: Int64
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(spend.categoryName)
+                    .font(.subheadline)
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 Text(spend.spent.formatted)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
                     .monospacedDigit()
             }
 
             GeometryReader { proxy in
-                RoundedRectangle(cornerRadius: 4)
+                Capsule(style: .continuous)
                     .fill(BudgetTracerStyle.accent)
-                    .frame(width: proxy.size.width * widthRatio)
+                    .frame(width: max(proxy.size.width * widthRatio, 6))
+                    .animation(BudgetTracerStyle.spring, value: widthRatio)
             }
-            .frame(height: 8)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+            .frame(height: 6)
+            .background(BudgetTracerStyle.surfaceSunken, in: Capsule(style: .continuous))
         }
-        .padding(.vertical, 4)
     }
 
     private var widthRatio: Double {
