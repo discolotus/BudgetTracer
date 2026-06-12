@@ -6,24 +6,37 @@ public struct BudgetSnapshot: Hashable, Sendable {
     public var categories: [BudgetCategory]
     public var transactions: [BudgetTransaction]
     public var recurringTransactionIDs: Set<BudgetTransaction.ID>
+    public var accountOverrides: [FinancialAccount.ID: AccountOverride]
+    public var lastSuccessfulSyncAt: Date?
 
     public init(
         institutions: [Institution],
         accounts: [FinancialAccount],
         categories: [BudgetCategory],
         transactions: [BudgetTransaction],
-        recurringTransactionIDs: Set<BudgetTransaction.ID> = []
+        recurringTransactionIDs: Set<BudgetTransaction.ID> = [],
+        accountOverrides: [FinancialAccount.ID: AccountOverride] = [:],
+        lastSuccessfulSyncAt: Date? = nil
     ) {
         self.institutions = institutions
         self.accounts = accounts
         self.categories = categories
         self.transactions = transactions
         self.recurringTransactionIDs = recurringTransactionIDs
+        self.accountOverrides = accountOverrides
+        self.lastSuccessfulSyncAt = lastSuccessfulSyncAt
     }
 
     public var totalCash: Money {
         accounts
             .filter { $0.kind == .checking || $0.kind == .savings }
+            .map(\.currentBalance)
+            .reduce(Money(minorUnits: 0), +)
+    }
+
+    public var availableCash: Money {
+        accounts
+            .filter { isAvailableCashAccount($0, override: accountOverrides[$0.id]) }
             .map(\.currentBalance)
             .reduce(Money(minorUnits: 0), +)
     }
@@ -74,10 +87,31 @@ public struct BudgetSnapshot: Hashable, Sendable {
         .sorted { $0.spent.minorUnits > $1.spent.minorUnits }
     }
 
+    public func applying(accountOverrides overrides: [FinancialAccount.ID: AccountOverride]) -> BudgetSnapshot {
+        var snapshot = self
+        snapshot.accountOverrides = overrides
+        snapshot.accounts = accounts.map { account in
+            guard let kind = overrides[account.id]?.kind else {
+                return account
+            }
+
+            var adjustedAccount = account
+            adjustedAccount.kind = kind
+            return adjustedAccount
+        }
+        return snapshot
+    }
+
+    public func includesInAvailableCash(_ account: FinancialAccount) -> Bool {
+        isAvailableCashAccount(account, override: accountOverrides[account.id])
+    }
+
     public func normalizedMonthlyCashFlow(
         containing date: Date? = nil,
         calendar: Calendar = Calendar.current,
-        through cutoffDate: Date? = nil
+        through cutoffDate: Date? = nil,
+        balanceBasis: CashFlowBalanceBasis = .accountBalances,
+        balanceAnchorEnd: Date? = nil
     ) -> [NormalizedCashFlowPoint] {
         let analysisDate = date ?? normalizedMonthlyAnalysisDate(calendar: calendar)
         guard let monthInterval = calendar.dateInterval(of: .month, for: analysisDate),
@@ -95,34 +129,56 @@ public struct BudgetSnapshot: Hashable, Sendable {
         let transactionInterval = transactionInterval(for: monthInterval, through: cutoffDate, calendar: calendar)
         let monthTransactions = transactions.filter { transactionInterval.contains($0.postedAt) }
         let accountsByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let openingBalances = openingCashFlowBalances(
+            startingAt: monthInterval.start,
+            through: balanceAnchorEnd ?? (cutoffDate == nil ? nil : transactionInterval.end),
+            accountsByID: accountsByID,
+            balanceBasis: balanceBasis
+        )
         var dailyNetMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
         var dailyCashMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
         var dailyCreditDebtMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+        var hasPostedCashTransactions = Array(repeating: false, count: daysInMonth)
+        var hasPostedCardTransactions = Array(repeating: false, count: daysInMonth)
 
         for transaction in monthTransactions {
+            let account = accountsByID[transaction.accountID]
+
+            if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                hasPostedCashTransactions[dayIndex] = hasPostedCashTransactions[dayIndex]
+                    || affectsCashBalance(transaction, account: account)
+                hasPostedCardTransactions[dayIndex] = hasPostedCardTransactions[dayIndex]
+                    || affectsCardBalance(transaction, account: account)
+            }
+
             if recurringTransactionIDs.contains(transaction.id) {
                 distribute(transaction.amount.minorUnits, across: &dailyNetMinorUnits)
-                distributeTransaction(
-                    transaction,
-                    account: accountsByID[transaction.accountID],
-                    acrossCash: &dailyCashMinorUnits,
-                    creditDebt: &dailyCreditDebtMinorUnits
-                )
             } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                 dailyNetMinorUnits[dayIndex] += transaction.amount.minorUnits
+            }
+
+            if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                 applyTransaction(
                     transaction,
-                    account: accountsByID[transaction.accountID],
+                    account: account,
                     cashDelta: &dailyCashMinorUnits[dayIndex],
                     creditDebtDelta: &dailyCreditDebtMinorUnits[dayIndex]
                 )
             }
         }
 
-        var runningCashBalance = cashFlowCashBalance
-        var runningCreditDebt = creditDebt
+        var runningCashBalance: Money
+        var runningCreditDebt: Money
+        switch balanceBasis {
+        case .accountBalances:
+            runningCashBalance = openingBalances.cashBalance
+            runningCreditDebt = openingBalances.creditDebt
+        case .monthStartZero:
+            runningCashBalance = Money(minorUnits: 0)
+            runningCreditDebt = Money(minorUnits: 0)
+        }
 
-        return dailyNetMinorUnits.prefix(renderedDayCount).enumerated().compactMap { offset, netMinorUnits in
+        let points: [NormalizedCashFlowPoint] = dailyNetMinorUnits.prefix(renderedDayCount).enumerated().compactMap { offset, netMinorUnits in
             guard let day = calendar.date(byAdding: .day, value: offset, to: monthInterval.start) else {
                 return nil
             }
@@ -135,9 +191,126 @@ public struct BudgetSnapshot: Hashable, Sendable {
                 date: day,
                 dailyNet: dailyNet,
                 runningCashBalance: runningCashBalance,
-                runningCreditDebt: runningCreditDebt
+                runningCreditDebt: runningCreditDebt,
+                hasPostedCashTransactions: hasPostedCashTransactions[offset],
+                hasPostedCardTransactions: hasPostedCardTransactions[offset]
             )
         }
+
+        guard balanceBasis == .monthStartZero else {
+            return points
+        }
+
+        return points.rebasedToZeroStart()
+    }
+
+    public func normalizedCashFlow(
+        in dateInterval: DateInterval,
+        calendar: Calendar = Calendar.current,
+        balanceBasis: CashFlowBalanceBasis = .accountBalances,
+        balanceAnchorEnd: Date? = nil
+    ) -> [NormalizedCashFlowPoint] {
+        guard dateInterval.start < dateInterval.end else {
+            return []
+        }
+
+        let accountsByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let openingBalances = openingCashFlowBalances(
+            startingAt: dateInterval.start,
+            through: balanceAnchorEnd,
+            accountsByID: accountsByID,
+            balanceBasis: balanceBasis
+        )
+        var runningCashBalance: Money
+        var runningCreditDebt: Money
+        switch balanceBasis {
+        case .accountBalances:
+            runningCashBalance = openingBalances.cashBalance
+            runningCreditDebt = openingBalances.creditDebt
+        case .monthStartZero:
+            runningCashBalance = Money(minorUnits: 0)
+            runningCreditDebt = Money(minorUnits: 0)
+        }
+
+        var points: [NormalizedCashFlowPoint] = []
+
+        for monthInterval in monthIntervals(intersecting: dateInterval, calendar: calendar) {
+            guard let dayRange = calendar.range(of: .day, in: .month, for: monthInterval.start),
+                  let transactionInterval = clampedInterval(monthInterval, to: dateInterval) else {
+                continue
+            }
+
+            let daysInMonth = dayRange.count
+            let renderedOffsets = renderedDayOffsets(
+                in: monthInterval,
+                daysInMonth: daysInMonth,
+                clippedTo: dateInterval,
+                calendar: calendar
+            )
+            guard !renderedOffsets.isEmpty else {
+                continue
+            }
+
+            let monthTransactions = transactions.filter { transactionInterval.contains($0.postedAt) }
+            var dailyNetMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var dailyCashMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var dailyCreditDebtMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var hasPostedCashTransactions = Array(repeating: false, count: daysInMonth)
+            var hasPostedCardTransactions = Array(repeating: false, count: daysInMonth)
+
+            for transaction in monthTransactions {
+                let account = accountsByID[transaction.accountID]
+
+                if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                    hasPostedCashTransactions[dayIndex] = hasPostedCashTransactions[dayIndex]
+                        || affectsCashBalance(transaction, account: account)
+                    hasPostedCardTransactions[dayIndex] = hasPostedCardTransactions[dayIndex]
+                        || affectsCardBalance(transaction, account: account)
+                }
+
+                if recurringTransactionIDs.contains(transaction.id) {
+                    distribute(transaction.amount.minorUnits, across: &dailyNetMinorUnits)
+                } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                    dailyNetMinorUnits[dayIndex] += transaction.amount.minorUnits
+                }
+
+                if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                    applyTransaction(
+                        transaction,
+                        account: account,
+                        cashDelta: &dailyCashMinorUnits[dayIndex],
+                        creditDebtDelta: &dailyCreditDebtMinorUnits[dayIndex]
+                    )
+                }
+            }
+
+            for offset in renderedOffsets {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: monthInterval.start) else {
+                    continue
+                }
+
+                let dailyNet = Money(minorUnits: dailyNetMinorUnits[offset])
+                runningCashBalance = runningCashBalance + Money(minorUnits: dailyCashMinorUnits[offset])
+                runningCreditDebt = runningCreditDebt + Money(minorUnits: dailyCreditDebtMinorUnits[offset])
+
+                points.append(
+                    NormalizedCashFlowPoint(
+                        date: day,
+                        dailyNet: dailyNet,
+                        runningCashBalance: runningCashBalance,
+                        runningCreditDebt: runningCreditDebt,
+                        hasPostedCashTransactions: hasPostedCashTransactions[offset],
+                        hasPostedCardTransactions: hasPostedCardTransactions[offset]
+                    )
+                )
+            }
+        }
+
+        guard balanceBasis == .monthStartZero else {
+            return points
+        }
+
+        return points.rebasedToZeroStart()
     }
 
     public func normalizedMonthlySpending(
@@ -230,6 +403,109 @@ public struct BudgetSnapshot: Hashable, Sendable {
         }
     }
 
+    public func normalizedSpending(
+        in dateInterval: DateInterval,
+        calendar: Calendar = Calendar.current
+    ) -> [NormalizedSpendingPoint] {
+        guard dateInterval.start < dateInterval.end else {
+            return []
+        }
+
+        var points: [NormalizedSpendingPoint] = []
+        var cumulativeNormalizedSpendingMinorUnits: Int64 = 0
+        var cumulativeNormalizedIncomeMinorUnits: Int64 = 0
+
+        for monthInterval in monthIntervals(intersecting: dateInterval, calendar: calendar) {
+            guard let dayRange = calendar.range(of: .day, in: .month, for: monthInterval.start),
+                  let transactionInterval = clampedInterval(monthInterval, to: dateInterval) else {
+                continue
+            }
+
+            let daysInMonth = dayRange.count
+            let renderedOffsets = renderedDayOffsets(
+                in: monthInterval,
+                daysInMonth: daysInMonth,
+                clippedTo: dateInterval,
+                calendar: calendar
+            )
+            guard !renderedOffsets.isEmpty else {
+                continue
+            }
+
+            let monthTransactions = transactions.filter { transactionInterval.contains($0.postedAt) }
+            var actualSpendingMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var actualIncomeMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var normalizedSpendingMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var normalizedIncomeMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var averagedSpendingMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
+            var averagedTransactionMarkers = Array(repeating: [AveragedTransactionMarker](), count: daysInMonth)
+
+            for transaction in monthTransactions {
+                if transaction.amount.isExpense {
+                    let spendingMinorUnits = transaction.amount.absolute.minorUnits
+
+                    if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                        actualSpendingMinorUnits[dayIndex] += spendingMinorUnits
+
+                        if recurringTransactionIDs.contains(transaction.id) {
+                            averagedTransactionMarkers[dayIndex].append(
+                                AveragedTransactionMarker(
+                                    transactionID: transaction.id,
+                                    merchantName: transaction.merchantName,
+                                    amount: transaction.amount.absolute
+                                )
+                            )
+                        }
+                    }
+
+                    if recurringTransactionIDs.contains(transaction.id) {
+                        distribute(spendingMinorUnits, across: &normalizedSpendingMinorUnits)
+                        distribute(spendingMinorUnits, across: &averagedSpendingMinorUnits)
+                    } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                        normalizedSpendingMinorUnits[dayIndex] += spendingMinorUnits
+                    }
+                } else if transaction.amount.isIncome {
+                    let incomeMinorUnits = transaction.amount.minorUnits
+
+                    if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                        actualIncomeMinorUnits[dayIndex] += incomeMinorUnits
+                    }
+
+                    if recurringTransactionIDs.contains(transaction.id) {
+                        distribute(incomeMinorUnits, across: &normalizedIncomeMinorUnits)
+                    } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
+                        normalizedIncomeMinorUnits[dayIndex] += incomeMinorUnits
+                    }
+                }
+            }
+
+            for offset in renderedOffsets {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: monthInterval.start) else {
+                    continue
+                }
+
+                cumulativeNormalizedSpendingMinorUnits += normalizedSpendingMinorUnits[offset]
+                cumulativeNormalizedIncomeMinorUnits += normalizedIncomeMinorUnits[offset]
+
+                points.append(
+                    NormalizedSpendingPoint(
+                        date: day,
+                        actualSpending: Money(minorUnits: actualSpendingMinorUnits[offset]),
+                        actualIncome: Money(minorUnits: actualIncomeMinorUnits[offset]),
+                        normalizedSpending: Money(minorUnits: normalizedSpendingMinorUnits[offset]),
+                        normalizedIncome: Money(minorUnits: normalizedIncomeMinorUnits[offset]),
+                        cumulativeNormalizedSpending: Money(minorUnits: cumulativeNormalizedSpendingMinorUnits),
+                        cumulativeNormalizedIncome: Money(minorUnits: cumulativeNormalizedIncomeMinorUnits),
+                        averagedRecurringSpending: Money(minorUnits: averagedSpendingMinorUnits[offset]),
+                        averagedTransactionMarkers: averagedTransactionMarkers[offset]
+                    )
+                )
+            }
+        }
+
+        return points
+    }
+
     public func cumulativeTransactionSpending(
         containing date: Date? = nil,
         calendar: Calendar = Calendar.current,
@@ -254,6 +530,39 @@ public struct BudgetSnapshot: Hashable, Sendable {
         var cumulativeSpending = Money(minorUnits: 0)
 
         return monthTransactions.map { transaction in
+            cumulativeSpending = cumulativeSpending + transaction.amount.absolute
+            return CumulativeTransactionSpendingPoint(
+                transactionID: transaction.id,
+                occurredAt: transaction.occurredAt,
+                merchantName: transaction.merchantName,
+                amount: transaction.amount.absolute,
+                cumulativeSpending: cumulativeSpending,
+                isAveraged: recurringTransactionIDs.contains(transaction.id)
+            )
+        }
+    }
+
+    public func cumulativeTransactionSpending(
+        in dateInterval: DateInterval,
+        calendar: Calendar = Calendar.current
+    ) -> [CumulativeTransactionSpendingPoint] {
+        guard dateInterval.start < dateInterval.end else {
+            return []
+        }
+
+        let rangeTransactions = transactions
+            .filter { $0.amount.isExpense && dateInterval.contains($0.occurredAt) }
+            .sorted {
+                if $0.occurredAt != $1.occurredAt {
+                    return $0.occurredAt < $1.occurredAt
+                }
+
+                return $0.id < $1.id
+            }
+
+        var cumulativeSpending = Money(minorUnits: 0)
+
+        return rangeTransactions.map { transaction in
             cumulativeSpending = cumulativeSpending + transaction.amount.absolute
             return CumulativeTransactionSpendingPoint(
                 transactionID: transaction.id,
@@ -294,24 +603,102 @@ public struct BudgetSnapshot: Hashable, Sendable {
         .sorted()
     }
 
-    private func distributeTransaction(
-        _ transaction: BudgetTransaction,
-        account: FinancialAccount?,
-        acrossCash dailyCashMinorUnits: inout [Int64],
-        creditDebt dailyCreditDebtMinorUnits: inout [Int64]
-    ) {
-        switch account?.kind {
-        case .creditCard:
-            distribute(-transaction.amount.minorUnits, across: &dailyCreditDebtMinorUnits)
-        case .checking, .savings:
-            if isCashFlowCashAccount(account) {
-                distribute(transaction.amount.minorUnits, across: &dailyCashMinorUnits)
-            }
-        case .investment, .loan, .other:
-            return
-        case .none:
-            distribute(transaction.amount.minorUnits, across: &dailyCashMinorUnits)
+    private func monthIntervals(intersecting dateInterval: DateInterval, calendar: Calendar) -> [DateInterval] {
+        guard let firstMonth = calendar.dateInterval(of: .month, for: dateInterval.start) else {
+            return []
         }
+
+        var intervals: [DateInterval] = []
+        var cursor = firstMonth.start
+
+        while cursor < dateInterval.end {
+            guard let monthInterval = calendar.dateInterval(of: .month, for: cursor) else {
+                break
+            }
+
+            if clampedInterval(monthInterval, to: dateInterval) != nil {
+                intervals.append(monthInterval)
+            }
+
+            guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: cursor) else {
+                break
+            }
+            cursor = nextMonth
+        }
+
+        return intervals
+    }
+
+    private func clampedInterval(_ interval: DateInterval, to bounds: DateInterval) -> DateInterval? {
+        let start = max(interval.start, bounds.start)
+        let end = min(interval.end, bounds.end)
+
+        guard start < end else {
+            return nil
+        }
+
+        return DateInterval(start: start, end: end)
+    }
+
+    private func renderedDayOffsets(
+        in monthInterval: DateInterval,
+        daysInMonth: Int,
+        clippedTo dateInterval: DateInterval,
+        calendar: Calendar
+    ) -> Range<Int> {
+        guard let clippedInterval = clampedInterval(monthInterval, to: dateInterval) else {
+            return 0..<0
+        }
+
+        let startOffset = dayOffset(
+            for: calendar.startOfDay(for: clippedInterval.start),
+            in: monthInterval,
+            daysInMonth: daysInMonth,
+            calendar: calendar
+        )
+        let endOffset = renderedEndOffset(
+            for: clippedInterval.end,
+            in: monthInterval,
+            daysInMonth: daysInMonth,
+            calendar: calendar
+        )
+
+        guard startOffset < endOffset else {
+            return 0..<0
+        }
+
+        return startOffset..<endOffset
+    }
+
+    private func renderedEndOffset(
+        for date: Date,
+        in monthInterval: DateInterval,
+        daysInMonth: Int,
+        calendar: Calendar
+    ) -> Int {
+        let dayStart = calendar.startOfDay(for: date)
+        let rawOffset = dayOffset(
+            for: dayStart,
+            in: monthInterval,
+            daysInMonth: daysInMonth,
+            calendar: calendar
+        )
+
+        if date == dayStart {
+            return rawOffset
+        }
+
+        return min(daysInMonth, rawOffset + 1)
+    }
+
+    private func dayOffset(
+        for date: Date,
+        in monthInterval: DateInterval,
+        daysInMonth: Int,
+        calendar: Calendar
+    ) -> Int {
+        let offset = calendar.dateComponents([.day], from: monthInterval.start, to: date).day ?? 0
+        return min(max(offset, 0), daysInMonth)
     }
 
     private func applyTransaction(
@@ -320,7 +707,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
         cashDelta: inout Int64,
         creditDebtDelta: inout Int64
     ) {
-        switch account?.kind {
+        switch account.map({ effectiveKind(for: $0) }) {
         case .creditCard:
             creditDebtDelta += -transaction.amount.minorUnits
         case .checking, .savings:
@@ -334,11 +721,81 @@ public struct BudgetSnapshot: Hashable, Sendable {
         }
     }
 
+    private func affectsCashBalance(_ transaction: BudgetTransaction, account: FinancialAccount?) -> Bool {
+        guard transaction.amount.minorUnits != 0 else {
+            return false
+        }
+
+        switch account.map({ effectiveKind(for: $0) }) {
+        case .checking, .savings:
+            return isCashFlowCashAccount(account)
+        case .creditCard, .investment, .loan, .other:
+            return false
+        case .none:
+            return true
+        }
+    }
+
+    private func affectsCardBalance(_ transaction: BudgetTransaction, account: FinancialAccount?) -> Bool {
+        guard transaction.amount.minorUnits != 0 else {
+            return false
+        }
+
+        switch account.map({ effectiveKind(for: $0) }) {
+        case .creditCard:
+            return true
+        case .checking, .savings, .investment, .loan, .other:
+            return false
+        case .none:
+            return false
+        }
+    }
+
     private var cashFlowCashBalance: Money {
-        accounts
-            .filter { isCashFlowCashAccount($0) }
-            .map(\.currentBalance)
-            .reduce(Money(minorUnits: 0), +)
+        availableCash
+    }
+
+    private func openingCashFlowBalances(
+        startingAt start: Date,
+        through balanceAnchorEnd: Date?,
+        accountsByID: [FinancialAccount.ID: FinancialAccount],
+        balanceBasis: CashFlowBalanceBasis
+    ) -> CashFlowOpeningBalances {
+        switch balanceBasis {
+        case .monthStartZero:
+            return CashFlowOpeningBalances(cashBalance: Money(minorUnits: 0), creditDebt: Money(minorUnits: 0))
+        case .accountBalances:
+            var cashDeltaSinceStart: Int64 = 0
+            var creditDebtDeltaSinceStart: Int64 = 0
+
+            for transaction in transactions where transaction.postedAt >= start {
+                if let balanceAnchorEnd, transaction.postedAt >= balanceAnchorEnd {
+                    continue
+                }
+
+                var cashDelta: Int64 = 0
+                var creditDebtDelta: Int64 = 0
+                applyTransaction(
+                    transaction,
+                    account: accountsByID[transaction.accountID],
+                    cashDelta: &cashDelta,
+                    creditDebtDelta: &creditDebtDelta
+                )
+                cashDeltaSinceStart += cashDelta
+                creditDebtDeltaSinceStart += creditDebtDelta
+            }
+
+            return CashFlowOpeningBalances(
+                cashBalance: Money(
+                    minorUnits: cashFlowCashBalance.minorUnits - cashDeltaSinceStart,
+                    currencyCode: cashFlowCashBalance.currencyCode
+                ),
+                creditDebt: Money(
+                    minorUnits: creditDebt.absolute.minorUnits - creditDebtDeltaSinceStart,
+                    currencyCode: creditDebt.currencyCode
+                )
+            )
+        }
     }
 
     private func isCashFlowCashAccount(_ account: FinancialAccount?) -> Bool {
@@ -346,12 +803,33 @@ public struct BudgetSnapshot: Hashable, Sendable {
             return true
         }
 
-        guard account.kind == .checking || account.kind == .savings else {
+        return isAvailableCashAccount(account)
+    }
+
+    private func isAvailableCashAccount(_ account: FinancialAccount, override: AccountOverride? = nil) -> Bool {
+        if override?.includesInAvailableCash == false {
+            return false
+        }
+
+        let kind = override?.kind ?? account.kind
+        guard kind == .checking || kind == .savings else {
+            return false
+        }
+
+        if override?.includesInAvailableCash == true {
+            return true
+        }
+
+        guard kind == .checking else {
             return false
         }
 
         let subtype = account.plaidSubtype?.lowercased()
-        return subtype != "money market"
+        return subtype != "money market" && subtype != "cd"
+    }
+
+    private func effectiveKind(for account: FinancialAccount) -> AccountKind {
+        accountOverrides[account.id]?.kind ?? account.kind
     }
 
     private func distribute(_ minorUnits: Int64, across dailyNetMinorUnits: inout [Int64]) {
@@ -428,6 +906,11 @@ public struct BudgetSnapshot: Hashable, Sendable {
     }
 }
 
+private struct CashFlowOpeningBalances {
+    var cashBalance: Money
+    var creditDebt: Money
+}
+
 public struct CategorySpend: Identifiable, Hashable, Sendable {
     public var id: String { categoryID }
     public var categoryID: BudgetCategory.ID
@@ -447,6 +930,8 @@ public struct NormalizedCashFlowPoint: Identifiable, Hashable, Sendable {
     public var dailyNet: Money
     public var runningCashBalance: Money
     public var runningCreditDebt: Money
+    public var hasPostedCashTransactions: Bool
+    public var hasPostedCardTransactions: Bool
     public var runningCashMinusCreditDebt: Money {
         runningCashBalance - runningCreditDebt
     }
@@ -455,12 +940,45 @@ public struct NormalizedCashFlowPoint: Identifiable, Hashable, Sendable {
         date: Date,
         dailyNet: Money,
         runningCashBalance: Money,
-        runningCreditDebt: Money = Money(minorUnits: 0)
+        runningCreditDebt: Money = Money(minorUnits: 0),
+        hasPostedCashTransactions: Bool = false,
+        hasPostedCardTransactions: Bool = false
     ) {
         self.date = date
         self.dailyNet = dailyNet
         self.runningCashBalance = runningCashBalance
         self.runningCreditDebt = runningCreditDebt
+        self.hasPostedCashTransactions = hasPostedCashTransactions
+        self.hasPostedCardTransactions = hasPostedCardTransactions
+    }
+}
+
+public enum CashFlowBalanceBasis: String, CaseIterable, Hashable, Sendable {
+    case accountBalances
+    case monthStartZero
+}
+
+private extension Array where Element == NormalizedCashFlowPoint {
+    func rebasedToZeroStart() -> [NormalizedCashFlowPoint] {
+        guard let first else {
+            return []
+        }
+
+        let cashOffset = first.runningCashBalance
+        let creditDebtOffset = first.runningCreditDebt
+
+        return map { point in
+            let runningCashBalance = point.runningCashBalance - cashOffset
+            let runningCreditDebt = point.runningCreditDebt - creditDebtOffset
+            return NormalizedCashFlowPoint(
+                date: point.date,
+                dailyNet: point.dailyNet,
+                runningCashBalance: runningCashBalance,
+                runningCreditDebt: runningCreditDebt,
+                hasPostedCashTransactions: point.hasPostedCashTransactions,
+                hasPostedCardTransactions: point.hasPostedCardTransactions
+            )
+        }
     }
 }
 

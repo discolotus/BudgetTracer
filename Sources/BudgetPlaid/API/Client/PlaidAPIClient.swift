@@ -4,6 +4,7 @@ public protocol PlaidAPIClientProtocol {
     func createLinkToken(userID: String) async throws -> PlaidLinkTokenResponse
     func createSandboxPublicToken(institutionID: String, products: [String]) async throws -> PlaidSandboxPublicTokenResponse
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidPublicTokenExchangeResponse
+    func getAccounts(accessToken: String) async throws -> PlaidAccountsGetResponse
     func syncTransactions(accessToken: String, cursor: String?) async throws -> PlaidTransactionsSyncResponse
 }
 
@@ -68,6 +69,19 @@ public final class PlaidAPIClient: PlaidAPIClientProtocol {
                 clientID: configuration.clientID,
                 secret: configuration.secret,
                 publicToken: publicToken
+            )
+        )
+        return response
+    }
+
+    public func getAccounts(accessToken: String) async throws -> PlaidAccountsGetResponse {
+        let configuration = try configurationProvider()
+        let response: PlaidAccountsGetResponse = try await post(
+            path: "/accounts/get",
+            body: PlaidAccountsGetRequest(
+                clientID: configuration.clientID,
+                secret: configuration.secret,
+                accessToken: accessToken
             )
         )
         return response

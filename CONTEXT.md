@@ -5,8 +5,8 @@ BudgetTracer is a personal or household budgeting product for iOS and macOS. It 
 ## Product Intent
 
 - Help users understand budgets, balances, spending, and income from connected financial data.
-- Integrate with financial data providers, probably Plaid.
-- Support multiple representations of financial data as the product model becomes clearer.
+- Integrate with Plaid through a backend-owned provider boundary.
+- Support multiple representations of financial data as the product model evolves.
 - Let users mark recurring monthly income and spending transactions so charts can spread those amounts across the month instead of showing misleading date-specific spikes.
 
 ## Engineering Intent
@@ -22,6 +22,6 @@ BudgetTracer is a personal or household budgeting product for iOS and macOS. It 
 - Xcode app targets live in a generated `BudgetTracer.xcodeproj` from `project.yml`; platform lifecycle code belongs under `Apps/`, while shared domain/UI remains in Swift package products.
 - App UI review should default to demo/sample data mode. Plaid and Keychain access must be opt-in through explicit backend/Plaid scripts or `BUDGETTRACER_USE_BACKEND=1`, to avoid repeated macOS password prompts.
 
-## Initial Platform Decision
+## Platform Structure
 
-Use a Swift package for shared `BudgetCore` and `BudgetTracerSharedUI`, plus a SwiftPM macOS executable shell for immediate local iteration. Add normal Xcode iOS and macOS app targets when signing, entitlements, assets, capabilities, and App Store packaging become necessary.
+Use Swift packages for shared `BudgetCore`, `BudgetPersistence`, `BudgetPlaid`, and `BudgetTracerSharedUI`. Keep the SwiftPM macOS executable shell for immediate local iteration, and use the generated Xcode iOS and macOS app targets for simulator, device, and release-oriented builds. `project.yml` is the source of truth for the checked-in `BudgetTracer.xcodeproj`.

@@ -106,6 +106,192 @@ final class PlaidSyncServiceTests: XCTestCase {
         XCTAssertEqual(syncEvent.removedCount, 0)
     }
 
+    func testSyncMapsMoneyMarketAndCdAccountsAsInvestments() async throws {
+        let database = try SQLiteDatabase(path: ":memory:")
+        let repository = BudgetRepository(database: database)
+        try repository.migrate()
+        try repository.ensureUser(id: "user-1")
+        let vault = InMemoryPlaidTokenVault()
+        let tokenRef = try vault.storeAccessToken("access-token", userID: "user-1", plaidItemID: "item-1")
+        try repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-1",
+                userID: "user-1",
+                plaidItemID: "item-1",
+                institutionID: nil,
+                accessTokenRef: tokenRef,
+                transactionsCursor: nil
+            )
+        )
+
+        let client = FakePlaidClient(
+            syncResponse: PlaidTransactionsSyncResponse(
+                accounts: [
+                    PlaidAccount(
+                        accountID: "checking",
+                        balances: PlaidBalances(
+                            available: Decimal(1200),
+                            current: Decimal(1200),
+                            isoCurrencyCode: "USD",
+                            unofficialCurrencyCode: nil
+                        ),
+                        mask: nil,
+                        name: "Checking",
+                        officialName: nil,
+                        type: "depository",
+                        subtype: "checking"
+                    ),
+                    PlaidAccount(
+                        accountID: "money-market",
+                        balances: PlaidBalances(
+                            available: Decimal(9000),
+                            current: Decimal(9000),
+                            isoCurrencyCode: "USD",
+                            unofficialCurrencyCode: nil
+                        ),
+                        mask: nil,
+                        name: "Money Market",
+                        officialName: nil,
+                        type: "depository",
+                        subtype: "money market"
+                    ),
+                    PlaidAccount(
+                        accountID: "cd",
+                        balances: PlaidBalances(
+                            available: nil,
+                            current: Decimal(3000),
+                            isoCurrencyCode: "USD",
+                            unofficialCurrencyCode: nil
+                        ),
+                        mask: nil,
+                        name: "Certificate of Deposit",
+                        officialName: nil,
+                        type: "depository",
+                        subtype: "cd"
+                    )
+                ],
+                added: [],
+                modified: [],
+                removed: [],
+                nextCursor: "cursor-1",
+                hasMore: false,
+                requestID: "request-1"
+            )
+        )
+        let service = PlaidSyncService(client: client, repository: repository, tokenVault: vault)
+        let snapshot = try await service.syncItem(id: "item-1")
+        let accountsByID = Dictionary(uniqueKeysWithValues: snapshot.accounts.map { ($0.id, $0) })
+
+        XCTAssertEqual(accountsByID["checking"]?.kind, .checking)
+        XCTAssertEqual(accountsByID["money-market"]?.kind, .investment)
+        XCTAssertEqual(accountsByID["cd"]?.kind, .investment)
+        XCTAssertEqual(snapshot.availableCash, .dollars(1200))
+    }
+
+    func testSyncStoresAccountsFromAccountsGetEvenWhenTheyHaveNoTransactions() async throws {
+        let database = try SQLiteDatabase(path: ":memory:")
+        let repository = BudgetRepository(database: database)
+        try repository.migrate()
+        try repository.ensureUser(id: "user-1")
+        let vault = InMemoryPlaidTokenVault()
+        let tokenRef = try vault.storeAccessToken("access-token", userID: "user-1", plaidItemID: "item-1")
+        try repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-1",
+                userID: "user-1",
+                plaidItemID: "item-1",
+                institutionID: nil,
+                accessTokenRef: tokenRef,
+                transactionsCursor: nil
+            )
+        )
+
+        let client = FakePlaidClient(
+            syncResponse: PlaidTransactionsSyncResponse(
+                accounts: [],
+                added: [],
+                modified: [],
+                removed: [],
+                nextCursor: "cursor-1",
+                hasMore: false,
+                requestID: "request-1"
+            )
+        )
+        client.accountsResponse = PlaidAccountsGetResponse(
+            accounts: [
+                PlaidAccount(
+                    accountID: "checking",
+                    balances: PlaidBalances(
+                        available: Decimal(1200),
+                        current: Decimal(1200),
+                        isoCurrencyCode: "USD",
+                        unofficialCurrencyCode: nil
+                    ),
+                    mask: nil,
+                    name: "Checking",
+                    officialName: nil,
+                    type: "depository",
+                    subtype: "checking"
+                ),
+                PlaidAccount(
+                    accountID: "brokerage",
+                    balances: PlaidBalances(
+                        available: nil,
+                        current: Decimal(9500),
+                        isoCurrencyCode: "USD",
+                        unofficialCurrencyCode: nil
+                    ),
+                    mask: nil,
+                    name: "Brokerage",
+                    officialName: nil,
+                    type: "investment",
+                    subtype: "brokerage"
+                ),
+                PlaidAccount(
+                    accountID: "card",
+                    balances: PlaidBalances(
+                        available: nil,
+                        current: Decimal(250),
+                        isoCurrencyCode: "USD",
+                        unofficialCurrencyCode: nil
+                    ),
+                    mask: nil,
+                    name: "Credit Card",
+                    officialName: nil,
+                    type: "credit",
+                    subtype: "credit card"
+                ),
+                PlaidAccount(
+                    accountID: "loan",
+                    balances: PlaidBalances(
+                        available: nil,
+                        current: Decimal(15000),
+                        isoCurrencyCode: "USD",
+                        unofficialCurrencyCode: nil
+                    ),
+                    mask: nil,
+                    name: "Loan",
+                    officialName: nil,
+                    type: "loan",
+                    subtype: "student"
+                )
+            ],
+            requestID: "accounts-request"
+        )
+
+        let service = PlaidSyncService(client: client, repository: repository, tokenVault: vault)
+        let snapshot = try await service.syncItem(id: "item-1")
+        let accountsByID = Dictionary(uniqueKeysWithValues: snapshot.accounts.map { ($0.id, $0) })
+
+        XCTAssertEqual(client.observedAccountGetAccessTokens, ["access-token"])
+        XCTAssertEqual(accountsByID.keys.sorted(), ["brokerage", "card", "checking", "loan"])
+        XCTAssertEqual(accountsByID["checking"]?.kind, .checking)
+        XCTAssertEqual(accountsByID["brokerage"]?.kind, .investment)
+        XCTAssertEqual(accountsByID["card"]?.kind, .creditCard)
+        XCTAssertEqual(accountsByID["loan"]?.kind, .loan)
+        XCTAssertTrue(snapshot.transactions.isEmpty)
+    }
+
     func testSyncMarksRemovedTransactionsWithoutDeletingUserAnnotations() async throws {
         let database = try SQLiteDatabase(path: ":memory:")
         let repository = BudgetRepository(database: database)
@@ -252,7 +438,9 @@ final class PlaidSyncServiceTests: XCTestCase {
 private final class FakePlaidClient: PlaidAPIClientProtocol {
     var syncResponses: [PlaidTransactionsSyncResponse]
     var syncError: Error?
+    var accountsResponse = PlaidAccountsGetResponse.empty
     var observedCursors: [String?] = []
+    var observedAccountGetAccessTokens: [String] = []
 
     init(syncResponse: PlaidTransactionsSyncResponse) {
         self.syncResponses = [syncResponse]
@@ -277,6 +465,11 @@ private final class FakePlaidClient: PlaidAPIClientProtocol {
 
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidPublicTokenExchangeResponse {
         PlaidPublicTokenExchangeResponse(accessToken: "access-token", itemID: "item-1", requestID: nil)
+    }
+
+    func getAccounts(accessToken: String) async throws -> PlaidAccountsGetResponse {
+        observedAccountGetAccessTokens.append(accessToken)
+        return accountsResponse
     }
 
     func syncTransactions(accessToken: String, cursor: String?) async throws -> PlaidTransactionsSyncResponse {

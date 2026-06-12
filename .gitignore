@@ -8,4 +8,5 @@ DerivedData/
 .budgettracer-backend.err.log
 .budgettracer-backend.pid
 .codex/screenshots/
+artifacts/
 tmp/

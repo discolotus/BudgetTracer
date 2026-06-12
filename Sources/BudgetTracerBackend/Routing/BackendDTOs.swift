@@ -127,16 +127,20 @@ struct SnapshotResponse: Encodable {
     var categories: [CategoryResponse]
     var transactions: [TransactionResponse]
     var recurringTransactionIDs: [String]
+    var lastSuccessfulSyncAt: Date?
+    var freshness: SnapshotFreshnessResponse?
     var normalizedMonthlyCashFlow: [NormalizedCashFlowPointResponse]
     var normalizedMonthlySpending: [NormalizedSpendingPointResponse]
     var cumulativeTransactionSpending: [CumulativeTransactionSpendingPointResponse]
 
-    init(snapshot: BudgetSnapshot) {
+    init(snapshot: BudgetSnapshot, freshness: SnapshotFreshnessResponse? = nil) {
         institutions = snapshot.institutions.map(InstitutionResponse.init)
         accounts = snapshot.accounts.map(AccountResponse.init)
         categories = snapshot.categories.map(CategoryResponse.init)
         transactions = snapshot.transactions.map(TransactionResponse.init)
         recurringTransactionIDs = Array(snapshot.recurringTransactionIDs).sorted()
+        lastSuccessfulSyncAt = snapshot.lastSuccessfulSyncAt
+        self.freshness = freshness
         normalizedMonthlyCashFlow = snapshot.normalizedMonthlyCashFlow().map(NormalizedCashFlowPointResponse.init)
         normalizedMonthlySpending = snapshot.normalizedMonthlySpending().map(NormalizedSpendingPointResponse.init)
         cumulativeTransactionSpending = snapshot.cumulativeTransactionSpending().map(CumulativeTransactionSpendingPointResponse.init)
@@ -148,9 +152,21 @@ struct SnapshotResponse: Encodable {
         case categories
         case transactions
         case recurringTransactionIDs = "recurring_transaction_ids"
+        case lastSuccessfulSyncAt = "last_successful_sync_at"
+        case freshness
         case normalizedMonthlyCashFlow = "normalized_monthly_cash_flow"
         case normalizedMonthlySpending = "normalized_monthly_spending"
         case cumulativeTransactionSpending = "cumulative_transaction_spending"
+    }
+}
+
+struct SnapshotFreshnessResponse: Encodable {
+    var policy: String
+    var syncedItemIDs: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case policy
+        case syncedItemIDs = "synced_item_ids"
     }
 }
 
@@ -248,6 +264,8 @@ struct NormalizedCashFlowPointResponse: Encodable {
     var runningCashBalance: MoneyResponse
     var runningCreditDebt: MoneyResponse
     var runningCashMinusCreditDebt: MoneyResponse
+    var hasPostedCashTransactions: Bool
+    var hasPostedCardTransactions: Bool
 
     init(_ point: NormalizedCashFlowPoint) {
         date = point.date
@@ -255,6 +273,8 @@ struct NormalizedCashFlowPointResponse: Encodable {
         runningCashBalance = MoneyResponse(point.runningCashBalance)
         runningCreditDebt = MoneyResponse(point.runningCreditDebt)
         runningCashMinusCreditDebt = MoneyResponse(point.runningCashMinusCreditDebt)
+        hasPostedCashTransactions = point.hasPostedCashTransactions
+        hasPostedCardTransactions = point.hasPostedCardTransactions
     }
 
     enum CodingKeys: String, CodingKey {
@@ -263,6 +283,8 @@ struct NormalizedCashFlowPointResponse: Encodable {
         case runningCashBalance = "running_cash_balance"
         case runningCreditDebt = "running_credit_debt"
         case runningCashMinusCreditDebt = "running_cash_minus_credit_debt"
+        case hasPostedCashTransactions = "has_posted_cash_transactions"
+        case hasPostedCardTransactions = "has_posted_card_transactions"
     }
 }
 

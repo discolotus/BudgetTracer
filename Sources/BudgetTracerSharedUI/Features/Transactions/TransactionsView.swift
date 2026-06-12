@@ -24,6 +24,8 @@ struct TransactionsView: View {
                 TransactionRowView(row: row)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(BudgetTracerStyle.screenBackground)
         .searchable(text: $searchText, placement: .automatic, prompt: "Search transactions")
     }
 
@@ -46,20 +48,33 @@ private struct TransactionRowView: View {
     var row: TransactionRow
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(row.merchantName)
-                Text(row.postedAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                transactionLabel
+                Spacer()
+                amountText
             }
 
-            Spacer()
-
-            Text(row.amount.formatted)
-                .foregroundStyle(row.amount.isExpense ? Color.primary : Color.green)
-                .monospacedDigit()
+            VStack(alignment: .leading, spacing: 8) {
+                transactionLabel
+                amountText
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    private var transactionLabel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.merchantName)
+            Text(row.postedAt.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var amountText: some View {
+        Text(row.amount.formatted)
+            .foregroundStyle(row.amount.isExpense ? Color.primary : BudgetTracerStyle.positive)
+            .monospacedDigit()
     }
 }

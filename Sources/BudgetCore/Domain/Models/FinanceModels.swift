@@ -10,7 +10,7 @@ public struct Institution: Identifiable, Hashable, Sendable {
     }
 }
 
-public enum AccountKind: String, CaseIterable, Hashable, Sendable {
+public enum AccountKind: String, CaseIterable, Codable, Hashable, Sendable {
     case checking
     case savings
     case creditCard
@@ -44,6 +44,16 @@ public struct FinancialAccount: Identifiable, Hashable, Sendable {
         self.plaidType = plaidType
         self.plaidSubtype = plaidSubtype
         self.currentBalance = currentBalance
+    }
+}
+
+public struct AccountOverride: Codable, Hashable, Sendable {
+    public var kind: AccountKind?
+    public var includesInAvailableCash: Bool?
+
+    public init(kind: AccountKind? = nil, includesInAvailableCash: Bool? = nil) {
+        self.kind = kind
+        self.includesInAvailableCash = includesInAvailableCash
     }
 }
 

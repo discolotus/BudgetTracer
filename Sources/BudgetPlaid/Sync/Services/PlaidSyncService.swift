@@ -70,6 +70,11 @@ public final class PlaidSyncService {
 
         do {
             let accessToken = try tokenVault.accessToken(for: item.accessTokenRef)
+            let accountResponse = try await client.getAccounts(accessToken: accessToken)
+            for account in accountResponse.accounts {
+                try repository.upsertAccount(account.storedAccount(userID: item.userID, itemID: item.id))
+            }
+
             var nextCursor = item.transactionsCursor
             var hasMore = true
 
@@ -173,12 +178,14 @@ private extension PlaidAccount {
         switch (type, subtype) {
         case ("depository", "checking"):
             return .checking
-        case ("depository", "savings"), ("depository", "money market"), ("depository", "cd"):
+        case ("depository", "savings"):
             return .savings
-        case ("credit", _):
-            return .creditCard
         case ("investment", _):
             return .investment
+        case ("depository", "money market"), ("depository", "cd"):
+            return .investment
+        case ("credit", _):
+            return .creditCard
         case ("loan", _):
             return .loan
         default:

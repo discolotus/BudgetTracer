@@ -1,0 +1,176 @@
+import BudgetCore
+@testable import BudgetTracerSharedUI
+import XCTest
+
+@MainActor
+final class BudgetWorkspaceTests: XCTestCase {
+    func testRefreshUsesSyncIfStaleAndPreservesProviderSyncTimestamp() async throws {
+        let syncedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let provider = RecordingFinancialDataProvider(snapshot: makeSnapshot(lastSuccessfulSyncAt: syncedAt))
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.refresh()
+
+        XCTAssertEqual(provider.requestedPolicies, [.syncIfStale(maxAge: 300)])
+        guard case .connected(let institutionCount, let lastSyncedAt) = workspace.connectionState else {
+            return XCTFail("Expected workspace to be connected after refresh.")
+        }
+        XCTAssertEqual(institutionCount, 1)
+        XCTAssertEqual(lastSyncedAt, syncedAt)
+    }
+
+    func testForceRefreshRequestsForceSyncAndDoesNotInventSyncTimestamp() async throws {
+        let provider = RecordingFinancialDataProvider(snapshot: makeSnapshot(lastSuccessfulSyncAt: nil))
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.refresh(forceSync: true)
+
+        XCTAssertEqual(provider.requestedPolicies, [.forceSync])
+        guard case .connected(_, let lastSyncedAt) = workspace.connectionState else {
+            return XCTFail("Expected workspace to be connected after refresh.")
+        }
+        XCTAssertNil(lastSyncedAt)
+    }
+
+    func testPreparePlaidLinkRequestsLinkToken() async throws {
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            linkToken: "link-sandbox-test"
+        )
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        let linkToken = await workspace.preparePlaidLink()
+
+        XCTAssertEqual(linkToken, "link-sandbox-test")
+        XCTAssertEqual(provider.linkTokenRequestCount, 1)
+        XCTAssertEqual(workspace.plaidLinkState, .ready)
+    }
+
+    func testFinishPlaidLinkExchangesPublicTokenAndUpdatesConnectionState() async throws {
+        let syncedAt = Date(timeIntervalSince1970: 1_800_000_123)
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            exchangeSnapshot: makeSnapshot(lastSuccessfulSyncAt: syncedAt)
+        )
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.finishPlaidLink(publicToken: "public-sandbox-test", institutionID: "ins_test")
+
+        XCTAssertEqual(
+            provider.exchangeRequests,
+            [PlaidExchangeRequest(publicToken: "public-sandbox-test", institutionID: "ins_test")]
+        )
+        XCTAssertEqual(workspace.plaidLinkState, .succeeded)
+        guard case .connected(let institutionCount, let lastSyncedAt) = workspace.connectionState else {
+            return XCTFail("Expected workspace to be connected after exchanging a public token.")
+        }
+        XCTAssertEqual(institutionCount, 1)
+        XCTAssertEqual(lastSyncedAt, syncedAt)
+    }
+
+    func testCreateSandboxPlaidItemUpdatesSnapshotAndConnectionState() async throws {
+        let syncedAt = Date(timeIntervalSince1970: 1_800_000_456)
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            sandboxSnapshot: makeSnapshot(lastSuccessfulSyncAt: syncedAt)
+        )
+        let workspace = BudgetWorkspace(
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.createSandboxPlaidItem(institutionID: "ins_109508")
+
+        XCTAssertEqual(provider.sandboxInstitutionIDs, ["ins_109508"])
+        XCTAssertEqual(workspace.plaidLinkState, .succeeded)
+        guard case .connected(let institutionCount, let lastSyncedAt) = workspace.connectionState else {
+            return XCTFail("Expected workspace to be connected after creating a sandbox item.")
+        }
+        XCTAssertEqual(institutionCount, 1)
+        XCTAssertEqual(lastSyncedAt, syncedAt)
+    }
+
+    private func makeSnapshot(lastSuccessfulSyncAt: Date?) -> BudgetSnapshot {
+        BudgetSnapshot(
+            institutions: [Institution(id: "bank", name: "Bank")],
+            accounts: [],
+            categories: [],
+            transactions: [],
+            lastSuccessfulSyncAt: lastSuccessfulSyncAt
+        )
+    }
+
+    private func makeUserDefaults() throws -> UserDefaults {
+        let suiteName = "BudgetWorkspaceTests.\(UUID().uuidString)"
+        return try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+}
+
+private final class RecordingFinancialDataProvider: FinancialDataProvider, @unchecked Sendable {
+    private let snapshot: BudgetSnapshot
+    private let linkToken: String
+    private let exchangeSnapshot: BudgetSnapshot?
+    private let sandboxSnapshot: BudgetSnapshot?
+    private(set) var requestedPolicies: [BudgetSnapshotFreshnessPolicy] = []
+    private(set) var linkTokenRequestCount = 0
+    private(set) var exchangeRequests: [PlaidExchangeRequest] = []
+    private(set) var sandboxInstitutionIDs: [String?] = []
+
+    init(
+        snapshot: BudgetSnapshot,
+        linkToken: String = "link-token",
+        exchangeSnapshot: BudgetSnapshot? = nil,
+        sandboxSnapshot: BudgetSnapshot? = nil
+    ) {
+        self.snapshot = snapshot
+        self.linkToken = linkToken
+        self.exchangeSnapshot = exchangeSnapshot
+        self.sandboxSnapshot = sandboxSnapshot
+    }
+
+    func fetchBudgetSnapshot() async throws -> BudgetSnapshot {
+        snapshot
+    }
+
+    func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot {
+        requestedPolicies.append(freshnessPolicy)
+        return snapshot
+    }
+
+    func createPlaidLinkToken() async throws -> String {
+        linkTokenRequestCount += 1
+        return linkToken
+    }
+
+    func exchangePlaidPublicToken(_ publicToken: String, institutionID: String?) async throws -> BudgetSnapshot {
+        exchangeRequests.append(PlaidExchangeRequest(publicToken: publicToken, institutionID: institutionID))
+        return exchangeSnapshot ?? snapshot
+    }
+
+    func createSandboxPlaidItem(institutionID: String?) async throws -> BudgetSnapshot {
+        sandboxInstitutionIDs.append(institutionID)
+        return sandboxSnapshot ?? snapshot
+    }
+}
+
+private struct PlaidExchangeRequest: Equatable {
+    var publicToken: String
+    var institutionID: String?
+}

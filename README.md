@@ -1,28 +1,40 @@
 # BudgetTracer
 
-BudgetTracer is a paired iOS and macOS budgeting app. The app will connect to financial data, likely through Plaid, and present household budget state through multiple views as those product details become clearer.
+BudgetTracer is a paired iOS and macOS budgeting app for understanding cash, card debt, spending, income, and recurring monthly budget pressure from connected financial data. The product uses one shared Swift domain and SwiftUI surface across Apple platforms, with thin platform app shells.
 
-## Architecture Direction
+Current release: `1.1.0` build `2`.
 
-- Use SwiftUI for both platforms.
-- Keep budgeting models, calculations, and financial sync boundaries in shared Swift packages.
-- Keep platform app shells thin: macOS should add desktop affordances such as sidebars, commands, settings, and keyboard shortcuts; iOS should use the same shared views and domain layer with platform-appropriate navigation.
-- Treat Plaid as an adapter behind `FinancialDataProvider`, not as a dependency imported directly by views.
+## Screenshots
 
-## Current Scaffold
+### iOS
 
-- `BudgetCore`: shared money, account, transaction, category, summary, and Plaid-boundary models.
-- `BudgetTracerSharedUI`: shared SwiftUI budget screens.
-- `BudgetTracerMac`: runnable macOS SwiftUI shell backed by the shared packages.
-- `BudgetTracer.xcodeproj`: generated Xcode project with iOS and macOS app targets.
+![BudgetTracer iOS Balances screen with 3M range](docs/screenshots/ios-balances-3m-pro-max.png)
 
-The Xcode app targets depend on `BudgetCore` and `BudgetTracerSharedUI`; their platform lifecycle files live under `Apps/`.
+### macOS
 
-Source targets use nested responsibility folders rather than wide target roots. The intended distinction is: code layout should be deep and navigable; database tables should remain flat and query-oriented.
+![BudgetTracer macOS Balances window](docs/screenshots/macos-balances-window.png)
 
-## Normalized Monthly View
+## App Surfaces
 
-BudgetTracer lets the user mark specific income or spending transactions as regular monthly transactions. The raw transactions remain unchanged, but selected regular items are averaged across every day of the month for plotted cash-flow and balance views. This makes a paycheck, rent payment, utility bill, or other predictable monthly item appear as daily budget pressure instead of a one-day spike.
+- `Overview`: cash, card debt, income, spending, and recent transactions.
+- `Balances`: normalized checking cash, cash minus card debt, previous-period balance traces, cumulative spending, cumulative income, and transaction-time spending.
+- `Accounts`: account classification controls for cash, savings, investments, cards, and exclusions.
+- `Transactions`: searchable transaction ledger with recurring monthly controls.
+- `Budgets`: category-level budget structure.
+
+The Balances screen supports `1M`, `3M`, `6M`, `9M`, and `1Y` ranges. Checking cash is the default cash basis; investments and funds, including money market accounts, are excluded from checking cash unless the user changes account classifications.
+
+## Architecture
+
+- `BudgetCore`: shared money, account, transaction, category, summary, and projection models.
+- `BudgetPersistence`: SQLite schema, migrations, repositories, transaction/account persistence, sync cursors, and user annotations.
+- `BudgetPlaid`: Plaid API client, Link token creation, public-token exchange, `/transactions/sync`, and Plaid-to-domain mapping.
+- `BudgetTracerSharedUI`: shared SwiftUI app screens and workspace state.
+- `BudgetTracerBackend`: local loopback backend for Plaid and persistence development.
+- `BudgetTracerMac`: SwiftPM macOS executable shell for fast local iteration.
+- `Apps/BudgetTraceriOS` and `Apps/BudgetTracerMac`: Xcode app lifecycle shells.
+
+The generated Xcode project is checked in at `BudgetTracer.xcodeproj`, with `project.yml` as the source of truth for target structure and shared build settings.
 
 ## Local Development
 
@@ -32,71 +44,25 @@ Build and run the macOS shell in demo mode, with no Plaid or Keychain access:
 ./script/run_local_stack.sh
 ```
 
-Run the local Plaid backend explicitly:
-
-```bash
-./script/run_backend.sh --background
-```
-
-By default, local Plaid mode reads sandbox credentials from:
-
-```text
-~/.budgettracer/secrets/PlaidSecrets.imported
-```
-
-and stores sandbox access tokens in:
-
-```text
-~/.budgettracer/secrets/plaid_access_tokens.json
-```
-
-This avoids macOS Keychain prompts during local testing. Set `BUDGETTRACER_PLAID_CREDENTIAL_STORE=keychain` and `BUDGETTRACER_PLAID_TOKEN_VAULT=keychain` only when intentionally testing the Keychain path.
-
 Run tests:
 
 ```bash
 swift test
 ```
 
-## Plaid Integration
-
-The Plaid implementation is split into:
-
-- `BudgetPlaid`: Link token creation, public-token exchange, `/transactions/sync`, and Plaid-to-domain mapping.
-- `BudgetPersistence`: SQLite schema, migrations, transaction/account persistence, sync cursors, and user annotations.
-- `BudgetCore`: shared app models and the `FinancialDataProvider` boundary.
-
-Plaid access tokens are represented in the database by `access_token_ref`; raw tokens belong in a backend token vault, not in the Apple clients or ordinary data tables. The local sandbox vault is file-backed for predictable no-popup development; Keychain remains available as an explicit opt-in.
-
-The financial database is intended to be the durable canonical ledger for ordinary financial app queries: date-range transactions, account filters, category and merchant rollups, income vs spending, pending/posted reconciliation, exports, and audit history. The normalized monthly view is a derived projection over that ledger plus user annotations, not a special-purpose replacement for the ledger.
-
-## Local Backend
-
-The local backend listens on `http://127.0.0.1:8790` by default and stores its SQLite database at:
-
-```text
-~/.budgettracer/BudgetTracer.sqlite
-```
-
-Useful scripts:
+Build both Xcode app targets:
 
 ```bash
-./script/backend_smoke.sh
-./script/plaid_sandbox_smoke.sh
-./script/plaid_sandbox_e2e.sh
-./script/run_plaid_stack.sh
-./script/run_backend.sh --stop
-```
-
-Xcode app target scripts:
-
-```bash
-./script/generate_xcode_project.sh
-./script/open_xcode.sh
 ./script/build_xcode_apps.sh
 ```
 
-The Xcode schemes default to demo mode:
+Regenerate the Xcode project after changing target structure:
+
+```bash
+./script/generate_xcode_project.sh
+```
+
+The Xcode schemes default to demo data:
 
 ```text
 BUDGETTRACER_USE_BACKEND=0
@@ -104,13 +70,51 @@ BUDGETTRACER_USE_BACKEND=0
 
 Set `BUDGETTRACER_USE_BACKEND=1` only when intentionally testing the Plaid-backed local backend.
 
-Implemented routes:
+## Plaid And Backend
+
+BudgetTracer keeps Plaid behind backend and provider boundaries:
+
+- Apple clients ask the backend for Link tokens and never store raw Plaid access tokens.
+- The backend exchanges public tokens and owns Plaid `/transactions/sync`.
+- The local database stores `access_token_ref`; raw tokens live in a token vault.
+- Local sandbox development defaults to file-backed secrets under `~/.budgettracer/secrets/` to avoid repeated Keychain prompts.
+
+Useful backend scripts:
+
+```bash
+./script/run_backend.sh --background
+./script/backend_smoke.sh
+./script/plaid_sandbox_smoke.sh
+./script/plaid_sandbox_e2e.sh
+./script/run_plaid_stack.sh
+./script/run_backend.sh --stop
+```
+
+Implemented local backend routes:
 
 - `GET /health`
-- `GET /snapshot`
+- `GET /snapshot` for cached reads, with optional `freshness=sync_if_stale&max_age_seconds=300` or `freshness=force_sync`
 - `POST /plaid/link-token`
 - `POST /plaid/exchange-public-token`
 - `POST /plaid/sandbox/create-item`
 - `POST /plaid/sync`
 - `POST /plaid/webhook`
 - `PATCH /transactions/regular-monthly`
+
+## CI And Releases
+
+GitHub Actions runs `swift test` and `./script/build_xcode_apps.sh` for pushes to `main` and pull requests.
+
+Publishing is not automated yet. A release pipeline still needs signing assets, provisioning profiles, App Store Connect credentials, and an explicit archive/export/notarization strategy before CI can publish iOS or macOS builds.
+
+## Documentation
+
+- [Changelog](CHANGELOG.md)
+- [Xcode app targets](docs/xcode-app-targets.md)
+- [Local Plaid secrets](docs/local-plaid-secrets.md)
+- [ADR 0001: Shared SwiftUI Apple Platform Architecture](docs/adr/0001-shared-swiftui-apple-platform-architecture.md)
+- [ADR 0002: Plaid Sync and Financial Database](docs/adr/0002-plaid-sync-and-financial-database.md)
+
+## License
+
+BudgetTracer is available under the [MIT License](LICENSE).
