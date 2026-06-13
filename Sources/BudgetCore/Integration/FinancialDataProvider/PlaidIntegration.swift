@@ -20,6 +20,9 @@ public protocol FinancialDataProvider: Sendable {
     func exchangePlaidPublicToken(_ publicToken: String, institutionID: String?) async throws -> BudgetSnapshot
     func createSandboxPlaidItem(institutionID: String?) async throws -> BudgetSnapshot
     func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot
+    func setCategory(transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) async throws -> BudgetSnapshot
+    func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot
+    func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot
 }
 
 public extension FinancialDataProvider {
@@ -33,6 +36,45 @@ public extension FinancialDataProvider {
             snapshot.recurringTransactionIDs.insert(transactionID)
         } else {
             snapshot.recurringTransactionIDs.remove(transactionID)
+        }
+        return snapshot
+    }
+
+    func setCategory(transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.id == transactionID else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = categoryID
+            return updated
+        }
+        return snapshot
+    }
+
+    func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        if let index = snapshot.categories.firstIndex(where: { $0.id == category.id }) {
+            snapshot.categories[index] = category
+        } else {
+            snapshot.categories.append(category)
+        }
+        return snapshot
+    }
+
+    func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        snapshot.categories.removeAll { $0.id == id }
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.categoryID == id else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = nil
+            return updated
         }
         return snapshot
     }

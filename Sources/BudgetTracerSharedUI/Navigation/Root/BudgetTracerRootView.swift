@@ -5,6 +5,7 @@ public struct BudgetTracerRootView: View {
     @StateObject private var workspace: BudgetWorkspace
     @SceneStorage("BudgetTracer.selectedSection") private var selectedSectionID = BudgetSection.overview.rawValue
     @State private var isShowingSettings = false
+    @State private var plaidLinkToken: String?
 
     @MainActor
     public init() {
@@ -17,24 +18,26 @@ public struct BudgetTracerRootView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            List(BudgetSection.allCases, selection: selection) { section in
-                Label(section.title, systemImage: section.systemImage)
-                    .tag(section.rawValue)
-            }
-            .navigationTitle("BudgetTracer")
-        } detail: {
-            detailView
-                .navigationTitle(selectedSection.title)
-                .toolbar {
-                    primaryToolbarItems
+        navigationShell
+            .tint(BudgetTracerStyle.accent)
+            .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
+        .budgetTracerPlaidLinkSheet(
+            linkToken: $plaidLinkToken,
+            onSuccess: { publicToken, institutionID in
+                Task {
+                    await workspace.finishPlaidLink(
+                        publicToken: publicToken,
+                        institutionID: institutionID
+                    )
                 }
-                .background(BudgetTracerStyle.screenBackground.ignoresSafeArea())
-                #if os(macOS)
-                .frame(minWidth: 720, minHeight: 520)
-                #endif
-        }
-        .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
+            },
+            onExit: {
+                workspace.cancelPlaidLink()
+            },
+            onFailure: { message in
+                workspace.failPlaidLink(message: message)
+            }
+        )
         .task {
             if case .notConnected = workspace.connectionState {
                 return
@@ -51,6 +54,86 @@ public struct BudgetTracerRootView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var navigationShell: some View {
+        #if os(iOS)
+        TabView(selection: selection) {
+            ForEach(BudgetSection.allCases) { section in
+                NavigationStack {
+                    sectionView(for: section)
+                        .navigationTitle(section.title)
+                        .toolbar { primaryToolbarItems }
+                        .toolbarBackground(BudgetTracerStyle.canvas, for: .navigationBar)
+                        .background(BudgetTracerStyle.canvas.ignoresSafeArea())
+                }
+                .tabItem {
+                    Label(section.title, systemImage: section.systemImage)
+                }
+                .tag(section.rawValue as String?)
+            }
+        }
+        #else
+        NavigationSplitView {
+            AccountsRailView(
+                snapshot: workspace.displaySnapshot,
+                connectionState: workspace.connectionState,
+                accountOverrides: workspace.accountOverrides,
+                setAccountKind: { accountID, kind in
+                    workspace.setAccount(accountID, kind: kind)
+                },
+                setAccountAvailableCash: { accountID, includesInAvailableCash in
+                    workspace.setAccount(accountID, includesInAvailableCash: includesInAvailableCash)
+                },
+                resetAccountOverride: { accountID in
+                    workspace.resetAccountOverride(accountID)
+                },
+                connect: {
+                    Task { plaidLinkToken = await workspace.preparePlaidLink() }
+                },
+                connectIsDisabled: isRefreshing
+            )
+            .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
+        } detail: {
+            VStack(spacing: 0) {
+                macTopBar
+                sectionView(for: selectedSection)
+            }
+            .background(BudgetTracerStyle.canvas.ignoresSafeArea())
+            .toolbar { primaryToolbarItems }
+            .frame(minWidth: 760, minHeight: 560)
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    private var macTopBar: some View {
+        HStack {
+            Spacer()
+            ThemePillPicker(
+                options: BudgetSection.topNavSections,
+                selection: topNavSelection,
+                label: { $0.title }
+            )
+            .frame(maxWidth: 460)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+        .background(BudgetTracerStyle.canvas)
+    }
+
+    private var topNavSelection: Binding<BudgetSection> {
+        Binding(
+            get: {
+                let current = selectedSection
+                return current == .accounts ? .overview : current
+            },
+            set: { selectedSectionID = $0.rawValue }
+        )
+    }
+    #endif
 
     private var isRefreshing: Bool {
         if case .connecting = workspace.connectionState {
@@ -103,15 +186,17 @@ public struct BudgetTracerRootView: View {
     }
 
     @ViewBuilder
-    private var detailView: some View {
-        switch selectedSection {
+    private func sectionView(for section: BudgetSection) -> some View {
+        switch section {
         case .overview:
             OverviewView(
                 snapshot: workspace.displaySnapshot,
                 connectionState: workspace.connectionState,
                 plaidLinkState: workspace.plaidLinkState,
                 preparePlaidLink: {
-                    Task { await workspace.preparePlaidLink() }
+                    Task {
+                        plaidLinkToken = await workspace.preparePlaidLink()
+                    }
                 },
                 createSandboxItem: {
                     Task { await workspace.createSandboxPlaidItem() }
@@ -123,10 +208,20 @@ public struct BudgetTracerRootView: View {
         case .normalizedMonth:
             NormalizedMonthView(
                 snapshot: workspace.displaySnapshot,
-                connectionState: workspace.connectionState
-            ) { transactionID, isRecurring in
-                workspace.setTransaction(transactionID, isRecurring: isRecurring)
-            }
+                connectionState: workspace.connectionState,
+                setRecurring: { transactionID, isRecurring in
+                    workspace.setRecurringForSeries(containing: transactionID, isRecurring: isRecurring)
+                },
+                setCategory: { transactionID, categoryID in
+                    workspace.setCategory(transactionID, categoryID: categoryID)
+                },
+                setRecurringSeries: { transactionIDs, isRecurring in
+                    workspace.setRecurring(transactionIDs, isRecurring: isRecurring)
+                },
+                setCategorySeries: { transactionIDs, categoryID in
+                    workspace.setCategory(transactionIDs, categoryID: categoryID)
+                }
+            )
         case .accounts:
             AccountsView(
                 snapshot: workspace.displaySnapshot,
@@ -142,9 +237,22 @@ public struct BudgetTracerRootView: View {
                 }
             )
         case .transactions:
-            TransactionsView(snapshot: workspace.displaySnapshot)
+            TransactionsView(
+                snapshot: workspace.displaySnapshot,
+                setRecurring: { transactionID, isRecurring in
+                    workspace.setRecurringForSeries(containing: transactionID, isRecurring: isRecurring)
+                },
+                setCategory: { transactionID, categoryID in
+                    workspace.setCategory(transactionID, categoryID: categoryID)
+                }
+            )
         case .budgets:
-            BudgetsView(snapshot: workspace.displaySnapshot)
+            BudgetsView(
+                snapshot: workspace.displaySnapshot,
+                addCategory: { name, limit in workspace.addCategory(name: name, monthlyLimit: limit) },
+                saveCategory: { category in workspace.saveCategory(category) },
+                deleteCategory: { categoryID in workspace.deleteCategory(categoryID) }
+            )
         }
     }
 }
@@ -171,6 +279,80 @@ private extension View {
     }
 }
 
+private extension View {
+    @ViewBuilder
+    func budgetTracerPlaidLinkSheet(
+        linkToken: Binding<String?>,
+        onSuccess: @escaping (String, String?) -> Void,
+        onExit: @escaping () -> Void,
+        onFailure: @escaping (String) -> Void
+    ) -> some View {
+        #if os(iOS)
+        self.sheet(
+            isPresented: Binding(
+                get: { linkToken.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented, linkToken.wrappedValue != nil {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    }
+                }
+            )
+        ) {
+            if let token = linkToken.wrappedValue {
+                BudgetTracerPlaidLinkSheet(
+                    linkToken: token,
+                    onSuccess: { publicToken, institutionID in
+                        linkToken.wrappedValue = nil
+                        onSuccess(publicToken, institutionID)
+                    },
+                    onExit: {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    },
+                    onFailure: { message in
+                        linkToken.wrappedValue = nil
+                        onFailure(message)
+                    }
+                )
+            }
+        }
+        #elseif os(macOS)
+        self.sheet(
+            isPresented: Binding(
+                get: { linkToken.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented, linkToken.wrappedValue != nil {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    }
+                }
+            )
+        ) {
+            if let token = linkToken.wrappedValue {
+                BudgetTracerPlaidWebLinkSheet(
+                    linkToken: token,
+                    onSuccess: { publicToken, institutionID in
+                        linkToken.wrappedValue = nil
+                        onSuccess(publicToken, institutionID)
+                    },
+                    onExit: {
+                        linkToken.wrappedValue = nil
+                        onExit()
+                    },
+                    onFailure: { message in
+                        linkToken.wrappedValue = nil
+                        onFailure(message)
+                    }
+                )
+            }
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 public extension Notification.Name {
     static let budgetTracerRefreshRequested = Notification.Name("BudgetTracerRefreshRequested")
 }
@@ -183,6 +365,11 @@ private enum BudgetSection: String, CaseIterable, Identifiable {
     case budgets
 
     var id: String { rawValue }
+
+    /// macOS top pill nav omits Accounts; the sidebar rail owns account management there.
+    static var topNavSections: [BudgetSection] {
+        [.overview, .normalizedMonth, .transactions, .budgets]
+    }
 
     var title: String {
         switch self {
@@ -202,13 +389,13 @@ private enum BudgetSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .overview:
-            return "chart.pie"
+            return "square.grid.2x2"
         case .normalizedMonth:
-            return "waveform.path.ecg"
+            return "chart.line.uptrend.xyaxis"
         case .accounts:
             return "building.columns"
         case .transactions:
-            return "list.bullet.rectangle"
+            return "list.bullet"
         case .budgets:
             return "target"
         }

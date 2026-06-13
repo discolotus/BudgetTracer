@@ -14,6 +14,9 @@ let package = Package(
         .library(name: "BudgetTracerSharedUI", targets: ["BudgetTracerSharedUI"]),
         .executable(name: "BudgetTracerMac", targets: ["BudgetTracerMac"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/plaid/plaid-link-ios-spm.git", from: "7.0.0")
+    ],
     targets: [
         .target(name: "BudgetCore"),
         .target(
@@ -31,7 +34,10 @@ let package = Package(
         ),
         .target(
             name: "BudgetTracerSharedUI",
-            dependencies: ["BudgetCore"]
+            dependencies: [
+                "BudgetCore",
+                .product(name: "LinkKit", package: "plaid-link-ios-spm", condition: .when(platforms: [.iOS]))
+            ]
         ),
         .executableTarget(
             name: "BudgetTracerMac",

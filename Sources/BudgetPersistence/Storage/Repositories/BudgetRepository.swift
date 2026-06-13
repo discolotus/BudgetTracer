@@ -23,6 +23,30 @@ public final class BudgetRepository {
             """,
             bindings: [.text(id), .text(nowString())]
         )
+        try seedDefaultCategoriesIfEmpty(userID: id)
+    }
+
+    /// Seeds the default category set the first time a user has none. Idempotent.
+    public func seedDefaultCategoriesIfEmpty(userID: String) throws {
+        let existing = try database.query(
+            "SELECT COUNT(*) AS count FROM budget_categories WHERE user_id = ?",
+            bindings: [.text(userID)]
+        ).first?["count"]?.int64 ?? 0
+
+        guard existing == 0 else {
+            return
+        }
+
+        for category in BudgetCategory.defaultSeed {
+            try upsertBudgetCategory(id: category.id, userID: userID, name: category.name)
+        }
+    }
+
+    public func deleteBudgetCategory(id: String, userID: String) throws {
+        try database.run(
+            "DELETE FROM budget_categories WHERE id = ? AND user_id = ?",
+            bindings: [.text(id), .text(userID)]
+        )
     }
 
     public func upsertInstitution(id: String, name: String) throws {
@@ -305,6 +329,56 @@ public final class BudgetRepository {
               updated_at = excluded.updated_at
             """,
             bindings: [.text(transactionID), .text(userID), .bool(isRegularMonthly), .text(now), .text(now)]
+        )
+    }
+
+    public func upsertBudgetCategory(
+        id: String,
+        userID: String,
+        name: String,
+        monthlyLimitMinorUnits: Int64? = nil,
+        currencyCode: String = "USD"
+    ) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO budget_categories(id, user_id, name, monthly_limit_minor_units, iso_currency_code, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              monthly_limit_minor_units = excluded.monthly_limit_minor_units,
+              iso_currency_code = excluded.iso_currency_code,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(id),
+                .text(userID),
+                .text(name),
+                monthlyLimitMinorUnits.map(SQLiteValue.integer) ?? .null,
+                .text(currencyCode),
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    public func setCategory(transactionID: String, categoryID: String?, userID: String) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO transaction_annotations(transaction_id, user_id, category_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              category_id = excluded.category_id,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(transactionID),
+                .text(userID),
+                categoryID.map(SQLiteValue.text) ?? .null,
+                .text(now),
+                .text(now)
+            ]
         )
     }
 

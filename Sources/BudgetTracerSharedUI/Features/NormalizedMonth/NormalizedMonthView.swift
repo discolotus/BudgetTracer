@@ -5,8 +5,13 @@ struct NormalizedMonthView: View {
     var snapshot: BudgetSnapshot
     var connectionState: PlaidConnectionState = .connected(institutionCount: 0, lastSyncedAt: nil)
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
+    var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
+    var setRecurringSeries: ([BudgetTransaction.ID], Bool) -> Void = { _, _ in }
+    var setCategorySeries: ([BudgetTransaction.ID], BudgetCategory.ID?) -> Void = { _, _ in }
 
     @State private var didApplyLaunchState = false
+    @State private var selectedTransactionID: BudgetTransaction.ID?
+    @State private var selectedSeriesKey: String?
 
     @SceneStorage("BudgetTracer.normalizedMonth.selectedMonthTimestamp")
     private var selectedMonthTimestamp: Double = 0
@@ -156,13 +161,6 @@ struct NormalizedMonthView: View {
         BalanceDateRange(rawValue: dateRangeID) ?? .oneMonth
     }
 
-    private var dateRangeSelection: Binding<String> {
-        Binding(
-            get: { dateRange.rawValue },
-            set: { dateRangeID = $0 }
-        )
-    }
-
     private var previousPeriodIsAvailable: Bool {
         previousMonthInterval != nil && (!previousMonthPoints.isEmpty || !previousMonthSpendingPoints.isEmpty)
     }
@@ -204,13 +202,6 @@ struct NormalizedMonthView: View {
         )
     }
 
-    private var cashFlowBalanceBasisSelection: Binding<String> {
-        Binding(
-            get: { cashFlowBalanceBasis.rawValue },
-            set: { cashFlowBalanceBasisID = $0 }
-        )
-    }
-
     private var cashFlowFallbackCash: Money {
         cashFlowBalanceBasis == .accountBalances ? snapshot.availableCash : Money(minorUnits: 0)
     }
@@ -219,12 +210,53 @@ struct NormalizedMonthView: View {
         cashFlowBalanceBasis == .accountBalances ? snapshot.creditDebt.absolute : Money(minorUnits: 0)
     }
 
+    private var selectedTransactionBinding: Binding<BudgetTransaction?> {
+        Binding(
+            get: {
+                guard let selectedTransactionID else { return nil }
+                return snapshot.transactions.first { $0.id == selectedTransactionID }
+            },
+            set: { newValue in selectedTransactionID = newValue?.id }
+        )
+    }
+
+    /// Recurring transactions in the window, collapsed to one series per merchant.
+    private var recurringSeries: [RecurringSeries] {
+        let windowRecurring = selectableTransactions.filter {
+            snapshot.recurringTransactionIDs.contains($0.id)
+        }
+
+        return RecurringSeries.build(
+            windowRecurring: windowRecurring,
+            allTransactions: snapshot.transactions
+        )
+    }
+
+    /// Non-recurring transactions stay as individual, markable rows.
+    private var nonRecurringTransactions: [BudgetTransaction] {
+        selectableTransactions.filter { !snapshot.recurringTransactionIDs.contains($0.id) }
+    }
+
+    private var hasRegularMonthlyContent: Bool {
+        !recurringSeries.isEmpty || !nonRecurringTransactions.isEmpty
+    }
+
+    private var selectedSeriesBinding: Binding<RecurringSeries?> {
+        Binding(
+            get: {
+                guard let selectedSeriesKey else { return nil }
+                return recurringSeries.first { $0.id == selectedSeriesKey }
+            },
+            set: { newValue in selectedSeriesKey = newValue?.id }
+        )
+    }
+
     private var selectableTransactions: [BudgetTransaction] {
         snapshot.transactions
             .filter { transaction in
                 transaction.amount.minorUnits != 0 && transactionDateInterval.contains(transaction.postedAt)
             }
-            .filter { TransactionSearch.matches($0, query: transactionSearchText) }
+            .filter { TransactionSearch.matches($0, query: transactionSearchText, in: snapshot) }
             .sorted { lhs, rhs in
                 if lhs.postedAt != rhs.postedAt {
                     return lhs.postedAt < rhs.postedAt
@@ -238,24 +270,35 @@ struct NormalizedMonthView: View {
             }
     }
 
+    private var cashFlowBalanceBasisBinding: Binding<CashFlowBalanceBasis> {
+        Binding(
+            get: { cashFlowBalanceBasis },
+            set: { cashFlowBalanceBasisID = $0.rawValue }
+        )
+    }
+
+    private var dateRangeBinding: Binding<BalanceDateRange> {
+        Binding(
+            get: { dateRange },
+            set: { dateRangeID = $0.rawValue }
+        )
+    }
+
     private var cashFlowBalanceBasisPicker: some View {
-        Picker("Cash plot baseline", selection: cashFlowBalanceBasisSelection) {
-            ForEach(CashFlowBalanceBasis.allCases, id: \.self) { basis in
-                Text(basis.displayName)
-                    .tag(basis.rawValue)
-            }
-        }
-        .pickerStyle(.segmented)
+        ThemePillPicker(
+            options: CashFlowBalanceBasis.allCases,
+            selection: cashFlowBalanceBasisBinding,
+            label: { $0.displayName }
+        )
+        .frame(maxWidth: 240)
     }
 
     private var dateRangePicker: some View {
-        Picker("Date range", selection: dateRangeSelection) {
-            ForEach(BalanceDateRange.allCases, id: \.self) { range in
-                Text(range.displayName)
-                    .tag(range.rawValue)
-            }
-        }
-        .pickerStyle(.segmented)
+        ThemePillPicker(
+            options: BalanceDateRange.allCases,
+            selection: dateRangeBinding,
+            label: { $0.displayName }
+        )
     }
 
     var body: some View {
@@ -299,15 +342,6 @@ struct NormalizedMonthView: View {
                         visibleMonthCount: analysisWindow.visibleMonthCount,
                         availableMonthCount: availableMonths.count
                     )
-
-                    BalancePlotControls(
-                        showsPreviousPeriod: $showsPreviousPeriod,
-                        showsCashBalance: showsCashBalanceSelection,
-                        showsCreditCardDebt: showsCreditCardDebtSelection,
-                        showsCardAdjustedBalance: showsCardAdjustedBalanceSelection,
-                        previousPeriodIsAvailable: previousPeriodIsAvailable,
-                        visibleBalanceSeriesCount: visibleBalanceSeriesCount
-                    )
                 }
 
                 CashFlowPlot(
@@ -316,13 +350,15 @@ struct NormalizedMonthView: View {
                     monthInterval: analysisDateInterval,
                     previousMonthInterval: previousMonthInterval,
                     balanceBasis: cashFlowBalanceBasis,
-                    showsPreviousPeriod: showsPreviousPeriod,
-                    showsCashBalance: showsCashBalance,
-                    showsCreditCardDebt: showsCreditCardDebt,
-                    showsCardAdjustedBalance: showsCardAdjustedBalance
+                    showsPreviousPeriod: $showsPreviousPeriod,
+                    showsCashBalance: showsCashBalanceSelection,
+                    showsCreditCardDebt: showsCreditCardDebtSelection,
+                    showsCardAdjustedBalance: showsCardAdjustedBalanceSelection,
+                    previousPeriodIsAvailable: previousPeriodIsAvailable,
+                    visibleBalanceSeriesCount: visibleBalanceSeriesCount
                 )
-                    .frame(height: 260)
-                    .padding()
+                    .frame(height: 280)
+                    .padding(18)
                     .budgetTracerCard(cornerRadius: 24)
 
                 DailySpendingPlot(
@@ -330,18 +366,19 @@ struct NormalizedMonthView: View {
                     previousMonthPoints: previousMonthSpendingPoints,
                     monthInterval: analysisDateInterval,
                     previousMonthInterval: previousMonthInterval,
-                    showsPreviousPeriod: showsPreviousPeriod
+                    showsPreviousPeriod: $showsPreviousPeriod,
+                    previousPeriodIsAvailable: previousPeriodIsAvailable
                 )
-                    .frame(height: 260)
-                    .padding()
+                    .frame(height: 280)
+                    .padding(18)
                     .budgetTracerCard(cornerRadius: 24)
 
                 TransactionTimeSpendingPlot(
                     points: transactionTimelinePoints,
                     monthInterval: analysisDateInterval
                 )
-                .frame(height: 260)
-                .padding()
+                .frame(height: 280)
+                .padding(18)
                 .budgetTracerCard(cornerRadius: 24)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 16)], spacing: 16) {
@@ -357,8 +394,7 @@ struct NormalizedMonthView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .center, spacing: 12) {
-                            Text("Regular Monthly Transactions")
-                                .font(.headline)
+                            SectionHeader("Regular monthly transactions")
 
                             Spacer()
 
@@ -366,26 +402,33 @@ struct NormalizedMonthView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Regular Monthly Transactions")
-                                .font(.headline)
+                            SectionHeader("Regular monthly transactions")
 
                             TransactionSearchField(text: $transactionSearchText)
                         }
                     }
 
                     VStack(spacing: 0) {
-                        if selectableTransactions.isEmpty {
+                        if !hasRegularMonthlyContent {
                             Text(transactionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No transactions in this range." : "No matching transactions.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
+                                .foregroundStyle(BudgetTracerStyle.inkMuted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 28)
                         } else {
-                            ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(selectableTransactions) { transaction in
+                            ForEach(recurringSeries) { series in
+                                RecurringSeriesRow(
+                                    series: series,
+                                    onTap: { selectedSeriesKey = series.id }
+                                )
+                            }
+
+                            ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(nonRecurringTransactions) { transaction in
                                 RecurringTransactionRow(
                                     transaction: transaction,
                                     isRecurring: snapshot.recurringTransactionIDs.contains(transaction.id),
-                                    setRecurring: setRecurring
+                                    setRecurring: setRecurring,
+                                    onOpenDetail: { selectedTransactionID = transaction.id }
                                 )
                             }
                         }
@@ -395,7 +438,27 @@ struct NormalizedMonthView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.screenBackground)
+        .background(BudgetTracerStyle.canvas)
+        .sheet(item: selectedTransactionBinding) { transaction in
+            TransactionDetailSheet(
+                transaction: transaction,
+                snapshot: snapshot,
+                setRecurring: setRecurring,
+                setCategory: setCategory,
+                dismiss: { selectedTransactionID = nil }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: selectedSeriesBinding) { series in
+            RecurringSeriesDetailSheet(
+                series: series,
+                snapshot: snapshot,
+                setRecurring: setRecurringSeries,
+                setCategory: setCategorySeries,
+                dismiss: { selectedSeriesKey = nil }
+            )
+            .presentationDetents([.medium, .large])
+        }
         .onAppear {
             applyLaunchStateIfNeeded()
             ensureVisibleBalanceSeries()
@@ -529,14 +592,7 @@ private struct BalanceDataStatusView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(BudgetTracerStyle.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(BudgetTracerStyle.cardBorder, lineWidth: 1)
-            }
+            .foregroundStyle(BudgetTracerStyle.inkMuted)
         }
     }
 
@@ -592,41 +648,6 @@ private struct BalanceDataStatusView: View {
     }
 }
 
-private struct BalancePlotControls: View {
-    @Binding var showsPreviousPeriod: Bool
-    @Binding var showsCashBalance: Bool
-    @Binding var showsCreditCardDebt: Bool
-    @Binding var showsCardAdjustedBalance: Bool
-    var previousPeriodIsAvailable: Bool
-    var visibleBalanceSeriesCount: Int
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) {
-                toggles
-            }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 10) {
-                toggles
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private var toggles: some View {
-        Toggle("Previous period", isOn: $showsPreviousPeriod)
-            .disabled(!previousPeriodIsAvailable)
-        Toggle("Cash", isOn: $showsCashBalance)
-            .disabled(showsCashBalance && visibleBalanceSeriesCount <= 1)
-        Toggle("Card debt", isOn: $showsCreditCardDebt)
-            .disabled(showsCreditCardDebt && visibleBalanceSeriesCount <= 1)
-        Toggle("Cash after cards", isOn: $showsCardAdjustedBalance)
-            .disabled(showsCardAdjustedBalance && visibleBalanceSeriesCount <= 1)
-    }
-}
-
 private struct TransactionSearchField: View {
     @Binding var text: String
 
@@ -650,14 +671,10 @@ private struct TransactionSearchField: View {
             }
         }
         .font(.subheadline)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
-        .background(BudgetTracerStyle.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(BudgetTracerStyle.cardBorder, lineWidth: 1)
-        }
+        .background(BudgetTracerStyle.surfaceSunken, in: Capsule(style: .continuous))
     }
 }
 
@@ -672,9 +689,14 @@ private struct MonthSelector: View {
         HStack(spacing: 6) {
             Button(action: selectPreviousMonth) {
                 Image(systemName: "chevron.left")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .frame(width: 26, height: 26)
+                    .background(BudgetTracerStyle.surfaceSunken, in: Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .disabled(!canMovePrevious)
+            .opacity(canMovePrevious ? 1 : 0.4)
             .help("Previous month")
 
             Picker("Month", selection: selection) {
@@ -688,9 +710,14 @@ private struct MonthSelector: View {
 
             Button(action: selectNextMonth) {
                 Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .frame(width: 26, height: 26)
+                    .background(BudgetTracerStyle.surfaceSunken, in: Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .disabled(!canMoveNext)
+            .opacity(canMoveNext ? 1 : 0.4)
             .help("Next month")
         }
     }
@@ -735,24 +762,26 @@ private struct TransactionTimeSpendingPlot: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("Transactions")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
                 Spacer()
                 Text((points.last?.cumulativeSpending ?? Money(minorUnits: 0)).formatted)
-                    .font(.subheadline.monospacedDigit())
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .contentTransition(.numericText())
             }
 
-            LegendRow(items: [
-                LegendEntry(color: BudgetTracerStyle.accent, title: "Transaction"),
-                LegendEntry(color: BudgetTracerStyle.chartPurple, title: "Averaged transaction")
-            ])
+            ChipFlowRow {
+                LegendChip(color: BudgetTracerStyle.accent, title: "Transaction", isOn: true)
+                LegendChip(color: BudgetTracerStyle.chartPurple, title: "Averaged transaction", isOn: true)
+            }
 
             GeometryReader { proxy in
                 ZStack(alignment: .bottomLeading) {
                     Rectangle()
-                        .fill(.quaternary)
+                        .fill(BudgetTracerStyle.hairline)
                         .frame(height: 1)
                         .offset(y: proxy.size.height / -2)
 
@@ -766,7 +795,7 @@ private struct TransactionTimeSpendingPlot: View {
                             }
                         }
                     }
-                    .stroke(BudgetTracerStyle.accent, style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
+                    .stroke(BudgetTracerStyle.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                     ForEach(points) { point in
                         if point.isAveraged {
@@ -778,8 +807,8 @@ private struct TransactionTimeSpendingPlot: View {
                                 .help(helpText(for: point))
                         } else {
                             Circle()
-                                .fill(BudgetTracerStyle.accent)
-                                .frame(width: 6, height: 6)
+                                .fill(BudgetTracerStyle.accent.opacity(0.8))
+                                .frame(width: 5, height: 5)
                                 .position(plotLocation(for: point, in: proxy.size))
                                 .help(helpText(for: point))
                         }
@@ -796,7 +825,7 @@ private struct TransactionTimeSpendingPlot: View {
                 Text(monthInterval.end.addingTimeInterval(-1).formatted(.dateTime.month(.abbreviated).day()))
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BudgetTracerStyle.inkFaint)
         }
     }
 
@@ -831,29 +860,39 @@ private struct DailySpendingPlot: View {
     var previousMonthPoints: [NormalizedSpendingPoint]
     var monthInterval: DateInterval
     var previousMonthInterval: DateInterval?
-    var showsPreviousPeriod: Bool
+    @Binding var showsPreviousPeriod: Bool
+    var previousPeriodIsAvailable: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("Spending")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
                 Spacer()
                 Text("\(totalCumulativeNormalizedSpending.formatted) / \(totalCumulativeNormalizedIncome.formatted)")
-                    .font(.subheadline.monospacedDigit())
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .contentTransition(.numericText())
             }
 
-            LegendRow(items: [
-                LegendEntry(color: BudgetTracerStyle.accent, title: "Cumulative spending"),
-                LegendEntry(color: BudgetTracerStyle.positive, title: "Cumulative income"),
-                LegendEntry(color: BudgetTracerStyle.chartPurple, title: "Averaged transaction")
-            ] + previousPeriodLegend)
+            ChipFlowRow {
+                LegendChip(color: BudgetTracerStyle.accent, title: "Cumulative spending", isOn: true)
+                LegendChip(color: BudgetTracerStyle.positive, title: "Cumulative income", isOn: true)
+                LegendChip(color: BudgetTracerStyle.chartPurple, title: "Averaged transaction", isOn: true)
+                LegendChip(
+                    color: BudgetTracerStyle.inkFaint,
+                    title: "Previous period",
+                    isOn: showsPreviousPeriod && previousPeriodIsAvailable,
+                    isEnabled: previousPeriodIsAvailable,
+                    toggle: { showsPreviousPeriod.toggle() }
+                )
+            }
 
             GeometryReader { proxy in
                 ZStack(alignment: .bottomLeading) {
                     Rectangle()
-                        .fill(.quaternary)
+                        .fill(BudgetTracerStyle.hairline)
                         .frame(height: 1)
                         .offset(y: proxy.size.height / -2)
 
@@ -883,8 +922,8 @@ private struct DailySpendingPlot: View {
                         let point = points[index]
                         let height = barHeight(for: point.cumulativeNormalizedSpending.minorUnits, in: proxy.size)
                         let width = barWidth(in: proxy.size)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(BudgetTracerStyle.accent.opacity(0.18))
+                        UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 2, style: .continuous)
+                            .fill(BudgetTracerStyle.accent.opacity(0.12))
                             .frame(width: width, height: height)
                             .position(
                                 x: xLocation(for: point.date, in: proxy.size),
@@ -907,7 +946,7 @@ private struct DailySpendingPlot: View {
                             }
                         }
                     }
-                    .stroke(BudgetTracerStyle.accent, style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+                    .stroke(BudgetTracerStyle.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                     Path { path in
                         for index in points.indices {
@@ -924,7 +963,7 @@ private struct DailySpendingPlot: View {
                             }
                         }
                     }
-                    .stroke(BudgetTracerStyle.positive, style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+                    .stroke(BudgetTracerStyle.positive, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                     ForEach(points.indices, id: \.self) { index in
                         let point = points[index]
@@ -945,6 +984,27 @@ private struct DailySpendingPlot: View {
                         }
                     }
 
+                    if let last = points.last {
+                        ChartEndpointDot(color: BudgetTracerStyle.accent)
+                            .position(
+                                plotLocation(
+                                    value: last.cumulativeNormalizedSpending.minorUnits,
+                                    date: last.date,
+                                    sourceMonthInterval: monthInterval,
+                                    in: proxy.size
+                                )
+                            )
+                        ChartEndpointDot(color: BudgetTracerStyle.positive)
+                            .position(
+                                plotLocation(
+                                    value: last.cumulativeNormalizedIncome.minorUnits,
+                                    date: last.date,
+                                    sourceMonthInterval: monthInterval,
+                                    in: proxy.size
+                                )
+                            )
+                    }
+
                     SparseYAxisLabels(labels: yAxisLabels)
                         .padding(.trailing, 4)
                 }
@@ -956,7 +1016,7 @@ private struct DailySpendingPlot: View {
                 Text(monthInterval.end.addingTimeInterval(-1).formatted(.dateTime.month(.abbreviated).day()))
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BudgetTracerStyle.inkFaint)
         }
     }
 
@@ -966,14 +1026,6 @@ private struct DailySpendingPlot: View {
 
     private var totalCumulativeNormalizedIncome: Money {
         points.last?.cumulativeNormalizedIncome ?? Money(minorUnits: 0)
-    }
-
-    private var previousPeriodLegend: [LegendEntry] {
-        guard showsPreviousPeriod, previousMonthInterval != nil, !previousMonthPoints.isEmpty else {
-            return []
-        }
-
-        return [LegendEntry(color: BudgetTracerStyle.accent.opacity(0.45), title: "Previous period")]
     }
 
     private var spendingCeiling: Int64 {
@@ -1045,30 +1097,63 @@ private struct CashFlowPlot: View {
     var monthInterval: DateInterval
     var previousMonthInterval: DateInterval?
     var balanceBasis: CashFlowBalanceBasis
-    var showsPreviousPeriod: Bool
-    var showsCashBalance: Bool
-    var showsCreditCardDebt: Bool
-    var showsCardAdjustedBalance: Bool
+    @Binding var showsPreviousPeriod: Bool
+    @Binding var showsCashBalance: Bool
+    @Binding var showsCreditCardDebt: Bool
+    @Binding var showsCardAdjustedBalance: Bool
+    var previousPeriodIsAvailable: Bool
+    var visibleBalanceSeriesCount: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(balanceBasis.chartTitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
                 Spacer()
                 if let last = points.last {
                     Text(last.runningCashMinusCreditDebt.formatted)
-                        .font(.subheadline.monospacedDigit())
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(BudgetTracerStyle.ink)
+                        .contentTransition(.numericText())
                 }
             }
 
-            LegendRow(items: legendEntries)
+            ChipFlowRow {
+                LegendChip(
+                    color: BalancePlotSeries.cash.color,
+                    title: balanceBasis.cashLegendTitle,
+                    isOn: showsCashBalance,
+                    isEnabled: !(showsCashBalance && visibleBalanceSeriesCount <= 1),
+                    toggle: { showsCashBalance.toggle() }
+                )
+                LegendChip(
+                    color: BalancePlotSeries.creditCardDebt.color,
+                    title: balanceBasis.cardDebtLegendTitle,
+                    isOn: showsCreditCardDebt,
+                    isEnabled: !(showsCreditCardDebt && visibleBalanceSeriesCount <= 1),
+                    toggle: { showsCreditCardDebt.toggle() }
+                )
+                LegendChip(
+                    color: BalancePlotSeries.cardAdjusted.color,
+                    title: balanceBasis.cardAdjustedLegendTitle,
+                    isOn: showsCardAdjustedBalance,
+                    isEnabled: !(showsCardAdjustedBalance && visibleBalanceSeriesCount <= 1),
+                    toggle: { showsCardAdjustedBalance.toggle() }
+                )
+                LegendChip(
+                    color: BudgetTracerStyle.inkFaint,
+                    title: "Previous period",
+                    isOn: showsPreviousPeriod && previousPeriodIsAvailable,
+                    isEnabled: previousPeriodIsAvailable,
+                    toggle: { showsPreviousPeriod.toggle() }
+                )
+            }
 
             GeometryReader { proxy in
                 ZStack(alignment: .bottomLeading) {
                     Rectangle()
-                        .fill(.quaternary)
+                        .fill(BudgetTracerStyle.hairline)
                         .frame(height: 1)
                         .offset(y: proxy.size.height / -2)
 
@@ -1079,13 +1164,24 @@ private struct CashFlowPlot: View {
                                 sourceMonthInterval: previousMonthInterval,
                                 in: proxy.size
                             )
-                            .stroke(series.color.opacity(0.48), style: previousMonthStyle.stroke)
+                            .stroke(series.color.opacity(0.35), style: previousMonthStyle.stroke)
                         }
+                    }
+
+                    if let fillSeries = visibleSeries.first {
+                        areaPath(series: fillSeries, in: proxy.size)
+                            .fill(
+                                LinearGradient(
+                                    colors: [fillSeries.color.opacity(0.14), fillSeries.color.opacity(0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     }
 
                     ForEach(visibleSeries) { series in
                         currentPath(series: series, in: proxy.size)
-                            .stroke(series.color, style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+                            .stroke(series.color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     }
 
                     ForEach(visibleSeries) { series in
@@ -1094,6 +1190,20 @@ private struct CashFlowPlot: View {
                             sourceMonthInterval: monthInterval,
                             in: proxy.size
                         )
+                    }
+
+                    ForEach(visibleSeries) { series in
+                        if let last = points.last {
+                            ChartEndpointDot(color: series.color)
+                                .position(
+                                    plotLocation(
+                                        value: last[keyPath: series.keyPath].minorUnits,
+                                        date: last.date,
+                                        sourceMonthInterval: monthInterval,
+                                        in: proxy.size
+                                    )
+                                )
+                        }
                     }
 
                     SparseYAxisLabels(labels: yAxisLabels)
@@ -1107,7 +1217,7 @@ private struct CashFlowPlot: View {
                 Text(monthInterval.end.addingTimeInterval(-1).formatted(.dateTime.month(.abbreviated).day()))
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BudgetTracerStyle.inkFaint)
         }
     }
 
@@ -1122,18 +1232,6 @@ private struct CashFlowPlot: View {
                 return showsCardAdjustedBalance
             }
         }
-    }
-
-    private var legendEntries: [LegendEntry] {
-        let currentEntries = visibleSeries.map { series in
-            LegendEntry(color: series.color, title: series.title(for: balanceBasis))
-        }
-
-        guard showsPreviousPeriod, previousMonthInterval != nil, !previousMonthPoints.isEmpty else {
-            return currentEntries
-        }
-
-        return currentEntries + [LegendEntry(color: Color.secondary.opacity(0.55), title: "Previous period")]
     }
 
     private var balanceRange: ClosedRange<Int64> {
@@ -1206,6 +1304,31 @@ private struct CashFlowPlot: View {
         }
     }
 
+    private func areaPath(series: BalancePlotSeries, in size: CGSize) -> Path {
+        var path = currentPath(series: series, in: size)
+        guard let last = points.last, let first = points.first else {
+            return path
+        }
+
+        let lastX = plotLocation(
+            value: last[keyPath: series.keyPath].minorUnits,
+            date: last.date,
+            sourceMonthInterval: monthInterval,
+            in: size
+        ).x
+        let firstX = plotLocation(
+            value: first[keyPath: series.keyPath].minorUnits,
+            date: first.date,
+            sourceMonthInterval: monthInterval,
+            in: size
+        ).x
+
+        path.addLine(to: CGPoint(x: lastX, y: size.height))
+        path.addLine(to: CGPoint(x: firstX, y: size.height))
+        path.closeSubpath()
+        return path
+    }
+
     private func transactionMarkers(
         series: BalancePlotSeries,
         sourceMonthInterval: DateInterval,
@@ -1222,8 +1345,8 @@ private struct CashFlowPlot: View {
                 )
 
                 Circle()
-                    .fill(markerColor(for: point))
-                    .frame(width: 5, height: 5)
+                    .fill(markerColor(for: point).opacity(0.75))
+                    .frame(width: 4, height: 4)
                     .position(location)
             }
         }
@@ -1330,7 +1453,7 @@ private struct SparseYAxisLabels: View {
                 }
             }
             .font(.caption2.monospacedDigit())
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(BudgetTracerStyle.inkFaint)
         }
         .allowsHitTesting(false)
     }
@@ -1424,51 +1547,6 @@ private enum ChartMoneyAxis {
     }
 }
 
-private struct LegendItem: View {
-    var color: Color
-    var title: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-}
-
-private struct LegendEntry: Identifiable {
-    var color: Color
-    var title: String
-
-    var id: String { title }
-}
-
-private struct LegendRow: View {
-    var items: [LegendEntry]
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) {
-                ForEach(items) { item in
-                    LegendItem(color: item.color, title: item.title)
-                }
-                Spacer()
-            }
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), alignment: .leading)], alignment: .leading, spacing: 8) {
-                ForEach(items) { item in
-                    LegendItem(color: item.color, title: item.title)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-}
-
 private struct SummaryPill: View {
     var title: String
     var value: String
@@ -1477,12 +1555,14 @@ private struct SummaryPill: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BudgetTracerStyle.inkMuted)
             Text(value)
                 .font(.headline.monospacedDigit())
+                .foregroundStyle(BudgetTracerStyle.ink)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(16)
         .budgetTracerCard(cornerRadius: 18)
     }
 }
@@ -1491,25 +1571,30 @@ private struct RecurringTransactionRow: View {
     var transaction: BudgetTransaction
     var isRecurring: Bool
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
+    var onOpenDetail: () -> Void
 
     var body: some View {
-        Toggle(isOn: binding) {
-            ViewThatFits(in: .horizontal) {
+        HStack(spacing: 12) {
+            Button(action: onOpenDetail) {
                 HStack(spacing: 12) {
                     transactionLabel
-                    Spacer()
+                    Spacer(minLength: 8)
                     transactionAmount
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    transactionLabel
-                    transactionAmount
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Toggle("Regular monthly", isOn: binding)
+                .labelsHidden()
+                .budgetTracerRecurringToggleStyle()
+                .tint(BudgetTracerStyle.accent)
+                .help("Mark as regular monthly")
         }
-        .budgetTracerRecurringToggleStyle()
-        .padding()
-        Divider()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        ThemeRowDivider()
+            .padding(.leading, 16)
     }
 
     private var binding: Binding<Bool> {
@@ -1521,22 +1606,30 @@ private struct RecurringTransactionRow: View {
 
     private var transactionLabel: some View {
         HStack(spacing: 12) {
-            Image(systemName: transaction.amount.isIncome ? "arrow.down.circle" : "arrow.up.circle")
+            Image(systemName: transaction.amount.isIncome ? "arrow.down" : "arrow.up")
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(transaction.amount.isIncome ? BudgetTracerStyle.positive : BudgetTracerStyle.caution)
-                .frame(width: 24)
+                .frame(width: 28, height: 28)
+                .background(
+                    (transaction.amount.isIncome ? BudgetTracerStyle.positive : BudgetTracerStyle.caution).opacity(0.12),
+                    in: Circle()
+                )
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.merchantName)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Text(transaction.postedAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
         }
     }
 
     private var transactionAmount: some View {
         Text(transaction.amount.formatted)
-            .font(.body.monospacedDigit())
+            .font(.subheadline.weight(.medium).monospacedDigit())
+            .foregroundStyle(BudgetTracerStyle.ink)
     }
 }
 

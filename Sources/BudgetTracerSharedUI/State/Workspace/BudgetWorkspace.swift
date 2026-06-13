@@ -91,19 +91,148 @@ public final class BudgetWorkspace: ObservableObject {
         }
     }
 
-    public func setTransaction(_ transactionID: BudgetTransaction.ID, isRecurring: Bool) {
-        if isRecurring {
-            snapshot.recurringTransactionIDs.insert(transactionID)
-        } else {
-            snapshot.recurringTransactionIDs.remove(transactionID)
+    public func cancelPlaidLink() {
+        plaidLinkState = .idle
+    }
+
+    public func failPlaidLink(message: String) {
+        plaidLinkState = .failed(message: message)
+    }
+
+    /// Applies a recurring change to every transaction in a series (e.g. all months of a bill).
+    public func setRecurring(_ transactionIDs: [BudgetTransaction.ID], isRecurring: Bool) {
+        guard !transactionIDs.isEmpty else { return }
+
+        for id in transactionIDs {
+            if isRecurring {
+                snapshot.recurringTransactionIDs.insert(id)
+            } else {
+                snapshot.recurringTransactionIDs.remove(id)
+            }
         }
 
         Task {
             do {
-                snapshot = try await dataProvider.setRegularMonthly(
+                var latest = snapshot
+                for id in transactionIDs {
+                    latest = try await dataProvider.setRegularMonthly(transactionID: id, isRegularMonthly: isRecurring)
+                }
+                snapshot = latest
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    /// Marking a transaction regular-monthly (or not) sweeps every transaction sharing its
+    /// merchant, so all occurrences of a recurring bill group together instead of leaving
+    /// other instances dangling in the list.
+    public func setRecurringForSeries(containing transactionID: BudgetTransaction.ID, isRecurring: Bool) {
+        guard let transaction = snapshot.transactions.first(where: { $0.id == transactionID }) else {
+            return
+        }
+
+        let key = RecurringSeries.normalizedMerchant(transaction.merchantName)
+        let ids = snapshot.transactions
+            .filter { RecurringSeries.normalizedMerchant($0.merchantName) == key }
+            .map(\.id)
+
+        setRecurring(ids, isRecurring: isRecurring)
+    }
+
+    /// Assigns a budget to every transaction in a series.
+    public func setCategory(_ transactionIDs: [BudgetTransaction.ID], categoryID: BudgetCategory.ID?) {
+        guard !transactionIDs.isEmpty else { return }
+
+        let ids = Set(transactionIDs)
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard ids.contains(transaction.id) else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = categoryID
+            return updated
+        }
+
+        Task {
+            do {
+                var latest = snapshot
+                for id in transactionIDs {
+                    latest = try await dataProvider.setCategory(transactionID: id, categoryID: categoryID)
+                }
+                snapshot = latest
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    public func setCategory(_ transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) {
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.id == transactionID else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = categoryID
+            return updated
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.setCategory(
                     transactionID: transactionID,
-                    isRegularMonthly: isRecurring
+                    categoryID: categoryID
                 )
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    @discardableResult
+    public func addCategory(name: String, monthlyLimit: Money?) -> BudgetCategory {
+        let category = BudgetCategory(id: UUID().uuidString, name: name, monthlyLimit: monthlyLimit)
+        saveCategory(category)
+        return category
+    }
+
+    public func saveCategory(_ category: BudgetCategory) {
+        if let index = snapshot.categories.firstIndex(where: { $0.id == category.id }) {
+            snapshot.categories[index] = category
+        } else {
+            snapshot.categories.append(category)
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.saveCategory(category)
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    public func deleteCategory(_ categoryID: BudgetCategory.ID) {
+        snapshot.categories.removeAll { $0.id == categoryID }
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.categoryID == categoryID else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = nil
+            return updated
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.deleteCategory(id: categoryID)
                 markConnected()
             } catch {
                 connectionState = .failed(message: error.localizedDescription)

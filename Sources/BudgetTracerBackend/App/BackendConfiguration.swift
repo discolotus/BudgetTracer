@@ -5,6 +5,7 @@ struct BackendConfiguration {
     var databasePath: String
     var defaultUserID: String
     var webhookURL: URL?
+    var redirectURI: URL?
     var plaidCredentialStore: PlaidCredentialStoreMode
     var plaidSecretsPath: String?
     var plaidTokenVault: PlaidTokenVaultMode
@@ -30,6 +31,7 @@ struct BackendConfiguration {
             databasePath: environment["BUDGETTRACER_DATABASE_PATH"] ?? stateDirectory.appendingPathComponent("BudgetTracer.sqlite").path,
             defaultUserID: environment["BUDGETTRACER_USER_ID"] ?? "local-user",
             webhookURL: environment["PLAID_WEBHOOK_URL"].flatMap(URL.init(string:)),
+            redirectURI: environment["PLAID_REDIRECT_URI"].flatMap(URL.init(string:)),
             plaidCredentialStore: credentialStoreMode,
             plaidSecretsPath: environment["BUDGETTRACER_PLAID_SECRETS_PATH"] ?? defaultSecretsPath,
             plaidTokenVault: tokenVaultMode,

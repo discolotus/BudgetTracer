@@ -2,79 +2,147 @@ import BudgetCore
 import Foundation
 import SwiftUI
 
-private struct TransactionRow: Identifiable, Hashable {
-    typealias ID = String
-
-    var id: String
-    var merchantName: String
-    var postedAt: Date
-    var amount: Money
-}
-
 @MainActor
 struct TransactionsView: View {
     var snapshot: BudgetSnapshot
+    var setRecurring: (BudgetTransaction.ID, Bool) -> Void = { _, _ in }
+    var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
 
     @SceneStorage("BudgetTracer.transactions.searchText")
     private var searchText = ""
 
+    @State private var selectedTransactionID: BudgetTransaction.ID?
+
     var body: some View {
-        List {
-            ForEach<[TransactionRow], TransactionRow.ID, TransactionRowView>(transactionRows) { row in
-                TransactionRowView(row: row)
+        ScrollView {
+            VStack(spacing: 0) {
+                if transactions.isEmpty {
+                    Text("No matching transactions.")
+                        .font(.subheadline)
+                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                } else {
+                    ForEach(transactions.indices, id: \.self) { index in
+                        TransactionRowView(
+                            transaction: transactions[index],
+                            isRecurring: snapshot.recurringTransactionIDs.contains(transactions[index].id),
+                            categoryName: categoryName(for: transactions[index]),
+                            onTap: { selectedTransactionID = transactions[index].id }
+                        )
+
+                        if index < transactions.index(before: transactions.endIndex) {
+                            ThemeRowDivider()
+                                .padding(.leading, 16)
+                        }
+                    }
+                }
             }
+            .budgetTracerCard()
+            .padding()
         }
-        .scrollContentBackground(.hidden)
-        .background(BudgetTracerStyle.screenBackground)
-        .searchable(text: $searchText, placement: .automatic, prompt: "Search transactions")
+        .background(BudgetTracerStyle.canvas)
+        .searchable(text: $searchText, placement: .automatic, prompt: "Search merchant, budget, or date")
+        .sheet(item: selectedTransactionBinding) { transaction in
+            TransactionDetailSheet(
+                transaction: transaction,
+                snapshot: snapshot,
+                setRecurring: setRecurring,
+                setCategory: setCategory,
+                dismiss: { selectedTransactionID = nil }
+            )
+            .presentationDetents([.medium, .large])
+        }
     }
 
-    private var transactionRows: [TransactionRow] {
+    private var transactions: [BudgetTransaction] {
         snapshot.transactions
-            .filter { TransactionSearch.matches($0, query: searchText) }
+            .filter { TransactionSearch.matches($0, query: searchText, in: snapshot) }
             .sorted { $0.postedAt > $1.postedAt }
-            .map {
-                TransactionRow(
-                    id: $0.id,
-                    merchantName: $0.merchantName,
-                    postedAt: $0.postedAt,
-                    amount: $0.amount
-                )
+    }
+
+    private func categoryName(for transaction: BudgetTransaction) -> String? {
+        transaction.categoryID.flatMap { categoryID in
+            snapshot.categories.first { $0.id == categoryID }?.name
         }
+    }
+
+    /// Resolves the selected id back into a transaction for `.sheet(item:)`.
+    private var selectedTransactionBinding: Binding<BudgetTransaction?> {
+        Binding(
+            get: {
+                guard let selectedTransactionID else { return nil }
+                return snapshot.transactions.first { $0.id == selectedTransactionID }
+            },
+            set: { newValue in selectedTransactionID = newValue?.id }
+        )
     }
 }
 
 private struct TransactionRowView: View {
-    var row: TransactionRow
+    var transaction: BudgetTransaction
+    var isRecurring: Bool
+    var categoryName: String?
+    var onTap: () -> Void
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                transactionLabel
-                Spacer()
-                amountText
-            }
+        Button(action: onTap) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    transactionLabel
+                    Spacer()
+                    amountText
+                    chevron
+                }
 
-            VStack(alignment: .leading, spacing: 8) {
-                transactionLabel
-                amountText
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        transactionLabel
+                        amountText
+                    }
+                    Spacer()
+                    chevron
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
     }
 
     private var transactionLabel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(row.merchantName)
-            Text(row.postedAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(transaction.merchantName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BudgetTracerStyle.ink)
+
+            HStack(spacing: 6) {
+                Text(transaction.postedAt.formatted(date: .abbreviated, time: .omitted))
+                if let categoryName {
+                    Text("·")
+                    Text(categoryName)
+                }
+                if isRecurring {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .help("Regular monthly")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(BudgetTracerStyle.inkMuted)
         }
     }
 
     private var amountText: some View {
-        Text(row.amount.formatted)
-            .foregroundStyle(row.amount.isExpense ? Color.primary : BudgetTracerStyle.positive)
+        Text(transaction.amount.formatted)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(transaction.amount.isExpense ? BudgetTracerStyle.ink : BudgetTracerStyle.positive)
             .monospacedDigit()
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(BudgetTracerStyle.inkFaint)
     }
 }
