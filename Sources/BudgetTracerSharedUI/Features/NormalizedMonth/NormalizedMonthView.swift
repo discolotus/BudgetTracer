@@ -384,7 +384,7 @@ struct NormalizedMonthView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.screenBackground)
+        .background(BudgetTracerStyle.canvas)
         .onAppear {
             applyLaunchStateIfNeeded()
             ensureVisibleBalanceSeries()
