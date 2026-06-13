@@ -141,8 +141,10 @@ public struct BudgetSnapshot: Hashable, Sendable {
         var hasPostedCashTransactions = Array(repeating: false, count: daysInMonth)
         var hasPostedCardTransactions = Array(repeating: false, count: daysInMonth)
 
+        let renderedOffsetArray = Array(0..<renderedDayCount)
         for transaction in monthTransactions {
             let account = accountsByID[transaction.accountID]
+            let isRecurring = recurringTransactionIDs.contains(transaction.id)
 
             if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                 hasPostedCashTransactions[dayIndex] = hasPostedCashTransactions[dayIndex]
@@ -151,13 +153,17 @@ public struct BudgetSnapshot: Hashable, Sendable {
                     || affectsCardBalance(transaction, account: account)
             }
 
-            if recurringTransactionIDs.contains(transaction.id) {
+            if isRecurring {
                 distribute(transaction.amount.minorUnits, across: &dailyNetMinorUnits)
+                distributeTransaction(
+                    transaction,
+                    account: account,
+                    acrossOffsets: renderedOffsetArray,
+                    cash: &dailyCashMinorUnits,
+                    creditDebt: &dailyCreditDebtMinorUnits
+                )
             } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                 dailyNetMinorUnits[dayIndex] += transaction.amount.minorUnits
-            }
-
-            if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                 applyTransaction(
                     transaction,
                     account: account,
@@ -252,6 +258,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
             }
 
             let monthTransactions = transactions.filter { transactionInterval.contains($0.postedAt) }
+            let renderedOffsetArray = Array(renderedOffsets)
             var dailyNetMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
             var dailyCashMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
             var dailyCreditDebtMinorUnits = Array(repeating: Int64(0), count: daysInMonth)
@@ -260,6 +267,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
             for transaction in monthTransactions {
                 let account = accountsByID[transaction.accountID]
+                let isRecurring = recurringTransactionIDs.contains(transaction.id)
 
                 if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                     hasPostedCashTransactions[dayIndex] = hasPostedCashTransactions[dayIndex]
@@ -268,13 +276,17 @@ public struct BudgetSnapshot: Hashable, Sendable {
                         || affectsCardBalance(transaction, account: account)
                 }
 
-                if recurringTransactionIDs.contains(transaction.id) {
+                if isRecurring {
                     distribute(transaction.amount.minorUnits, across: &dailyNetMinorUnits)
+                    distributeTransaction(
+                        transaction,
+                        account: account,
+                        acrossOffsets: renderedOffsetArray,
+                        cash: &dailyCashMinorUnits,
+                        creditDebt: &dailyCreditDebtMinorUnits
+                    )
                 } else if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                     dailyNetMinorUnits[dayIndex] += transaction.amount.minorUnits
-                }
-
-                if let dayIndex = dayIndex(for: transaction.postedAt, in: monthInterval, calendar: calendar) {
                     applyTransaction(
                         transaction,
                         account: account,
@@ -830,6 +842,54 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
     private func effectiveKind(for account: FinancialAccount) -> AccountKind {
         accountOverrides[account.id]?.kind ?? account.kind
+    }
+
+    /// Spreads a recurring transaction's cash / credit-debt impact evenly across the given
+    /// rendered day offsets, so the balance trace trends smoothly instead of stepping on the
+    /// posting date. Spreading over the rendered offsets (rather than the raw calendar month)
+    /// keeps the window's closing balance anchored to the real account balance.
+    private func distributeTransaction(
+        _ transaction: BudgetTransaction,
+        account: FinancialAccount?,
+        acrossOffsets offsets: [Int],
+        cash dailyCashMinorUnits: inout [Int64],
+        creditDebt dailyCreditDebtMinorUnits: inout [Int64]
+    ) {
+        switch account.map({ effectiveKind(for: $0) }) {
+        case .creditCard:
+            distribute(-transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCreditDebtMinorUnits)
+        case .checking, .savings:
+            if isCashFlowCashAccount(account) {
+                distribute(transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCashMinorUnits)
+            }
+        case .investment, .loan, .other:
+            return
+        case .none:
+            distribute(transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCashMinorUnits)
+        }
+    }
+
+    private func distribute(_ minorUnits: Int64, acrossOffsets offsets: [Int], in array: inout [Int64]) {
+        guard !offsets.isEmpty else {
+            return
+        }
+
+        let count = Int64(offsets.count)
+        let base = minorUnits / count
+        let remainder = minorUnits % count
+
+        for offset in offsets {
+            array[offset] += base
+        }
+
+        guard remainder != 0 else {
+            return
+        }
+
+        let adjustment = remainder > 0 ? Int64(1) : Int64(-1)
+        for index in 0..<Int(Swift.abs(remainder)) {
+            array[offsets[index]] += adjustment
+        }
     }
 
     private func distribute(_ minorUnits: Int64, across dailyNetMinorUnits: inout [Int64]) {
