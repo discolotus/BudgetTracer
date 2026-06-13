@@ -210,7 +210,7 @@ public struct BudgetTracerRootView: View {
                 snapshot: workspace.displaySnapshot,
                 connectionState: workspace.connectionState,
                 setRecurring: { transactionID, isRecurring in
-                    workspace.setTransaction(transactionID, isRecurring: isRecurring)
+                    workspace.setRecurringForSeries(containing: transactionID, isRecurring: isRecurring)
                 },
                 setCategory: { transactionID, categoryID in
                     workspace.setCategory(transactionID, categoryID: categoryID)
@@ -240,7 +240,7 @@ public struct BudgetTracerRootView: View {
             TransactionsView(
                 snapshot: workspace.displaySnapshot,
                 setRecurring: { transactionID, isRecurring in
-                    workspace.setTransaction(transactionID, isRecurring: isRecurring)
+                    workspace.setRecurringForSeries(containing: transactionID, isRecurring: isRecurring)
                 },
                 setCategory: { transactionID, categoryID in
                     workspace.setCategory(transactionID, categoryID: categoryID)
