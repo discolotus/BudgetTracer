@@ -214,6 +214,12 @@ public struct BudgetTracerRootView: View {
                 },
                 setCategory: { transactionID, categoryID in
                     workspace.setCategory(transactionID, categoryID: categoryID)
+                },
+                setRecurringSeries: { transactionIDs, isRecurring in
+                    workspace.setRecurring(transactionIDs, isRecurring: isRecurring)
+                },
+                setCategorySeries: { transactionIDs, categoryID in
+                    workspace.setCategory(transactionIDs, categoryID: categoryID)
                 }
             )
         case .accounts:

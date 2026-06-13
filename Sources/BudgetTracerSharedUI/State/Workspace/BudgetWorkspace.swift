@@ -119,6 +119,61 @@ public final class BudgetWorkspace: ObservableObject {
         }
     }
 
+    /// Applies a recurring change to every transaction in a series (e.g. all months of a bill).
+    public func setRecurring(_ transactionIDs: [BudgetTransaction.ID], isRecurring: Bool) {
+        guard !transactionIDs.isEmpty else { return }
+
+        for id in transactionIDs {
+            if isRecurring {
+                snapshot.recurringTransactionIDs.insert(id)
+            } else {
+                snapshot.recurringTransactionIDs.remove(id)
+            }
+        }
+
+        Task {
+            do {
+                var latest = snapshot
+                for id in transactionIDs {
+                    latest = try await dataProvider.setRegularMonthly(transactionID: id, isRegularMonthly: isRecurring)
+                }
+                snapshot = latest
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    /// Assigns a budget to every transaction in a series.
+    public func setCategory(_ transactionIDs: [BudgetTransaction.ID], categoryID: BudgetCategory.ID?) {
+        guard !transactionIDs.isEmpty else { return }
+
+        let ids = Set(transactionIDs)
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard ids.contains(transaction.id) else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = categoryID
+            return updated
+        }
+
+        Task {
+            do {
+                var latest = snapshot
+                for id in transactionIDs {
+                    latest = try await dataProvider.setCategory(transactionID: id, categoryID: categoryID)
+                }
+                snapshot = latest
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
     public func setCategory(_ transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) {
         snapshot.transactions = snapshot.transactions.map { transaction in
             guard transaction.id == transactionID else {
