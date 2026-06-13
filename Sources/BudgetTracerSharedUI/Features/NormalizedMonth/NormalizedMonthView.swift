@@ -6,9 +6,12 @@ struct NormalizedMonthView: View {
     var connectionState: PlaidConnectionState = .connected(institutionCount: 0, lastSyncedAt: nil)
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
     var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
+    var setRecurringSeries: ([BudgetTransaction.ID], Bool) -> Void = { _, _ in }
+    var setCategorySeries: ([BudgetTransaction.ID], BudgetCategory.ID?) -> Void = { _, _ in }
 
     @State private var didApplyLaunchState = false
     @State private var selectedTransactionID: BudgetTransaction.ID?
+    @State private var selectedSeriesKey: String?
 
     @SceneStorage("BudgetTracer.normalizedMonth.selectedMonthTimestamp")
     private var selectedMonthTimestamp: Double = 0
@@ -217,6 +220,37 @@ struct NormalizedMonthView: View {
         )
     }
 
+    /// Recurring transactions in the window, collapsed to one series per merchant.
+    private var recurringSeries: [RecurringSeries] {
+        let windowRecurring = selectableTransactions.filter {
+            snapshot.recurringTransactionIDs.contains($0.id)
+        }
+
+        return RecurringSeries.build(
+            windowRecurring: windowRecurring,
+            allTransactions: snapshot.transactions
+        )
+    }
+
+    /// Non-recurring transactions stay as individual, markable rows.
+    private var nonRecurringTransactions: [BudgetTransaction] {
+        selectableTransactions.filter { !snapshot.recurringTransactionIDs.contains($0.id) }
+    }
+
+    private var hasRegularMonthlyContent: Bool {
+        !recurringSeries.isEmpty || !nonRecurringTransactions.isEmpty
+    }
+
+    private var selectedSeriesBinding: Binding<RecurringSeries?> {
+        Binding(
+            get: {
+                guard let selectedSeriesKey else { return nil }
+                return recurringSeries.first { $0.id == selectedSeriesKey }
+            },
+            set: { newValue in selectedSeriesKey = newValue?.id }
+        )
+    }
+
     private var selectableTransactions: [BudgetTransaction] {
         snapshot.transactions
             .filter { transaction in
@@ -375,14 +409,21 @@ struct NormalizedMonthView: View {
                     }
 
                     VStack(spacing: 0) {
-                        if selectableTransactions.isEmpty {
+                        if !hasRegularMonthlyContent {
                             Text(transactionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No transactions in this range." : "No matching transactions.")
                                 .font(.subheadline)
                                 .foregroundStyle(BudgetTracerStyle.inkMuted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 28)
                         } else {
-                            ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(selectableTransactions) { transaction in
+                            ForEach(recurringSeries) { series in
+                                RecurringSeriesRow(
+                                    series: series,
+                                    onTap: { selectedSeriesKey = series.id }
+                                )
+                            }
+
+                            ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(nonRecurringTransactions) { transaction in
                                 RecurringTransactionRow(
                                     transaction: transaction,
                                     isRecurring: snapshot.recurringTransactionIDs.contains(transaction.id),
@@ -405,6 +446,16 @@ struct NormalizedMonthView: View {
                 setRecurring: setRecurring,
                 setCategory: setCategory,
                 dismiss: { selectedTransactionID = nil }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: selectedSeriesBinding) { series in
+            RecurringSeriesDetailSheet(
+                series: series,
+                snapshot: snapshot,
+                setRecurring: setRecurringSeries,
+                setCategory: setCategorySeries,
+                dismiss: { selectedSeriesKey = nil }
             )
             .presentationDetents([.medium, .large])
         }
