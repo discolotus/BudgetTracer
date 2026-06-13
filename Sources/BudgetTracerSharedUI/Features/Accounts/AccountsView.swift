@@ -141,24 +141,11 @@ struct AccountsView: View {
     }
 
     private func iconName(for kind: AccountKind) -> String {
-        switch kind {
-        case .checking:
-            return "building.columns"
-        case .savings:
-            return "banknote"
-        case .creditCard:
-            return "creditcard"
-        case .investment:
-            return "chart.line.uptrend.xyaxis"
-        case .loan:
-            return "doc.text"
-        case .other:
-            return "wallet.pass"
-        }
+        kind.iconName
     }
 }
 
-private extension AccountKind {
+extension AccountKind {
     var displayName: String {
         switch self {
         case .checking:
@@ -173,6 +160,23 @@ private extension AccountKind {
             return "Loan"
         case .other:
             return "Other"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .checking:
+            return "building.columns"
+        case .savings:
+            return "banknote"
+        case .creditCard:
+            return "creditcard"
+        case .investment:
+            return "chart.line.uptrend.xyaxis"
+        case .loan:
+            return "doc.text"
+        case .other:
+            return "wallet.pass"
         }
     }
 }

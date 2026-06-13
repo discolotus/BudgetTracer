@@ -75,21 +75,65 @@ public struct BudgetTracerRootView: View {
         }
         #else
         NavigationSplitView {
-            List(BudgetSection.allCases, selection: selection) { section in
-                Label(section.title, systemImage: section.systemImage)
-                    .tag(section.rawValue)
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("BudgetTracer")
+            AccountsRailView(
+                snapshot: workspace.displaySnapshot,
+                connectionState: workspace.connectionState,
+                accountOverrides: workspace.accountOverrides,
+                setAccountKind: { accountID, kind in
+                    workspace.setAccount(accountID, kind: kind)
+                },
+                setAccountAvailableCash: { accountID, includesInAvailableCash in
+                    workspace.setAccount(accountID, includesInAvailableCash: includesInAvailableCash)
+                },
+                resetAccountOverride: { accountID in
+                    workspace.resetAccountOverride(accountID)
+                },
+                connect: {
+                    Task { plaidLinkToken = await workspace.preparePlaidLink() }
+                },
+                connectIsDisabled: isRefreshing
+            )
+            .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
         } detail: {
-            sectionView(for: selectedSection)
-                .navigationTitle(selectedSection.title)
-                .toolbar { primaryToolbarItems }
-                .background(BudgetTracerStyle.canvas.ignoresSafeArea())
-                .frame(minWidth: 720, minHeight: 520)
+            VStack(spacing: 0) {
+                macTopBar
+                sectionView(for: selectedSection)
+            }
+            .background(BudgetTracerStyle.canvas.ignoresSafeArea())
+            .toolbar { primaryToolbarItems }
+            .frame(minWidth: 760, minHeight: 560)
         }
         #endif
     }
+
+    #if os(macOS)
+    private var macTopBar: some View {
+        HStack {
+            Spacer()
+            ThemePillPicker(
+                options: BudgetSection.topNavSections,
+                selection: topNavSelection,
+                label: { $0.title }
+            )
+            .frame(maxWidth: 460)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+        .background(BudgetTracerStyle.canvas)
+    }
+
+    private var topNavSelection: Binding<BudgetSection> {
+        Binding(
+            get: {
+                let current = selectedSection
+                return current == .accounts ? .overview : current
+            },
+            set: { selectedSectionID = $0.rawValue }
+        )
+    }
+    #endif
 
     private var isRefreshing: Bool {
         if case .connecting = workspace.connectionState {
@@ -298,6 +342,11 @@ private enum BudgetSection: String, CaseIterable, Identifiable {
     case budgets
 
     var id: String { rawValue }
+
+    /// macOS top pill nav omits Accounts; the sidebar rail owns account management there.
+    static var topNavSections: [BudgetSection] {
+        [.overview, .normalizedMonth, .transactions, .budgets]
+    }
 
     var title: String {
         switch self {
