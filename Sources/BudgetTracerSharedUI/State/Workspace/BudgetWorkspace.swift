@@ -99,26 +99,6 @@ public final class BudgetWorkspace: ObservableObject {
         plaidLinkState = .failed(message: message)
     }
 
-    public func setTransaction(_ transactionID: BudgetTransaction.ID, isRecurring: Bool) {
-        if isRecurring {
-            snapshot.recurringTransactionIDs.insert(transactionID)
-        } else {
-            snapshot.recurringTransactionIDs.remove(transactionID)
-        }
-
-        Task {
-            do {
-                snapshot = try await dataProvider.setRegularMonthly(
-                    transactionID: transactionID,
-                    isRegularMonthly: isRecurring
-                )
-                markConnected()
-            } catch {
-                connectionState = .failed(message: error.localizedDescription)
-            }
-        }
-    }
-
     /// Applies a recurring change to every transaction in a series (e.g. all months of a bill).
     public func setRecurring(_ transactionIDs: [BudgetTransaction.ID], isRecurring: Bool) {
         guard !transactionIDs.isEmpty else { return }
@@ -143,6 +123,22 @@ public final class BudgetWorkspace: ObservableObject {
                 connectionState = .failed(message: error.localizedDescription)
             }
         }
+    }
+
+    /// Marking a transaction regular-monthly (or not) sweeps every transaction sharing its
+    /// merchant, so all occurrences of a recurring bill group together instead of leaving
+    /// other instances dangling in the list.
+    public func setRecurringForSeries(containing transactionID: BudgetTransaction.ID, isRecurring: Bool) {
+        guard let transaction = snapshot.transactions.first(where: { $0.id == transactionID }) else {
+            return
+        }
+
+        let key = RecurringSeries.normalizedMerchant(transaction.merchantName)
+        let ids = snapshot.transactions
+            .filter { RecurringSeries.normalizedMerchant($0.merchantName) == key }
+            .map(\.id)
+
+        setRecurring(ids, isRecurring: isRecurring)
     }
 
     /// Assigns a budget to every transaction in a series.

@@ -136,6 +136,31 @@ final class BudgetWorkspaceTests: XCTestCase {
         XCTAssertEqual(workspace.plaidLinkState, .failed(message: "Link token expired."))
     }
 
+    func testMarkingRecurringSweepsEveryTransactionOfTheSameMerchant() {
+        func market(_ id: String) -> BudgetTransaction {
+            BudgetTransaction(id: id, accountID: "checking", categoryID: nil, postedAt: Date(), merchantName: "Neighborhood Market", amount: Money(minorUnits: -1_500))
+        }
+        let cafe = BudgetTransaction(id: "cafe", accountID: "checking", categoryID: nil, postedAt: Date(), merchantName: "Corner Cafe", amount: Money(minorUnits: -500))
+        let snapshot = BudgetSnapshot(
+            institutions: [],
+            accounts: [],
+            categories: [],
+            transactions: [market("m1"), market("m2"), market("m3"), cafe]
+        )
+        let workspace = BudgetWorkspace(
+            snapshot: snapshot,
+            dataProvider: SampleFinancialDataProvider(snapshot: snapshot)
+        )
+
+        // Flagging one occurrence sweeps the whole merchant series, not just that id.
+        workspace.setRecurringForSeries(containing: "m2", isRecurring: true)
+        XCTAssertEqual(workspace.snapshot.recurringTransactionIDs, ["m1", "m2", "m3"])
+
+        // Unflagging likewise clears the whole series and leaves other merchants untouched.
+        workspace.setRecurringForSeries(containing: "m1", isRecurring: false)
+        XCTAssertTrue(workspace.snapshot.recurringTransactionIDs.isEmpty)
+    }
+
     private func makeSnapshot(lastSuccessfulSyncAt: Date?) -> BudgetSnapshot {
         BudgetSnapshot(
             institutions: [Institution(id: "bank", name: "Bank")],
