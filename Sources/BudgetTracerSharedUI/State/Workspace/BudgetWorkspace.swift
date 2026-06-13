@@ -143,6 +143,52 @@ public final class BudgetWorkspace: ObservableObject {
         }
     }
 
+    @discardableResult
+    public func addCategory(name: String, monthlyLimit: Money?) -> BudgetCategory {
+        let category = BudgetCategory(id: UUID().uuidString, name: name, monthlyLimit: monthlyLimit)
+        saveCategory(category)
+        return category
+    }
+
+    public func saveCategory(_ category: BudgetCategory) {
+        if let index = snapshot.categories.firstIndex(where: { $0.id == category.id }) {
+            snapshot.categories[index] = category
+        } else {
+            snapshot.categories.append(category)
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.saveCategory(category)
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    public func deleteCategory(_ categoryID: BudgetCategory.ID) {
+        snapshot.categories.removeAll { $0.id == categoryID }
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.categoryID == categoryID else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = nil
+            return updated
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.deleteCategory(id: categoryID)
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
     public func setAccount(_ accountID: FinancialAccount.ID, kind: AccountKind) {
         var override = accountOverrides[accountID] ?? AccountOverride()
         override.kind = kind

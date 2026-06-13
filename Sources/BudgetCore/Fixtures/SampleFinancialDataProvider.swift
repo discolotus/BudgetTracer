@@ -41,4 +41,27 @@ public actor SampleFinancialDataProvider: FinancialDataProvider {
         }
         return snapshot
     }
+
+    public func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot {
+        if let index = snapshot.categories.firstIndex(where: { $0.id == category.id }) {
+            snapshot.categories[index] = category
+        } else {
+            snapshot.categories.append(category)
+        }
+        return snapshot
+    }
+
+    public func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot {
+        snapshot.categories.removeAll { $0.id == id }
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.categoryID == id else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = nil
+            return updated
+        }
+        return snapshot
+    }
 }

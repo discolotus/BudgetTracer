@@ -241,7 +241,12 @@ public struct BudgetTracerRootView: View {
                 }
             )
         case .budgets:
-            BudgetsView(snapshot: workspace.displaySnapshot)
+            BudgetsView(
+                snapshot: workspace.displaySnapshot,
+                addCategory: { name, limit in workspace.addCategory(name: name, monthlyLimit: limit) },
+                saveCategory: { category in workspace.saveCategory(category) },
+                deleteCategory: { categoryID in workspace.deleteCategory(categoryID) }
+            )
         }
     }
 }
