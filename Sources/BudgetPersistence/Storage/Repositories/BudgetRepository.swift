@@ -23,6 +23,30 @@ public final class BudgetRepository {
             """,
             bindings: [.text(id), .text(nowString())]
         )
+        try seedDefaultCategoriesIfEmpty(userID: id)
+    }
+
+    /// Seeds the default category set the first time a user has none. Idempotent.
+    public func seedDefaultCategoriesIfEmpty(userID: String) throws {
+        let existing = try database.query(
+            "SELECT COUNT(*) AS count FROM budget_categories WHERE user_id = ?",
+            bindings: [.text(userID)]
+        ).first?["count"]?.int64 ?? 0
+
+        guard existing == 0 else {
+            return
+        }
+
+        for category in BudgetCategory.defaultSeed {
+            try upsertBudgetCategory(id: category.id, userID: userID, name: category.name)
+        }
+    }
+
+    public func deleteBudgetCategory(id: String, userID: String) throws {
+        try database.run(
+            "DELETE FROM budget_categories WHERE id = ? AND user_id = ?",
+            bindings: [.text(id), .text(userID)]
+        )
     }
 
     public func upsertInstitution(id: String, name: String) throws {

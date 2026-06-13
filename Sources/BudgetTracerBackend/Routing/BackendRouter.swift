@@ -43,6 +43,10 @@ actor BackendRouter {
                 return try updateRegularMonthly(request)
             case ("PATCH", "/transactions/category"):
                 return try updateCategory(request)
+            case ("PUT", "/categories"):
+                return try upsertCategory(request)
+            case ("DELETE", "/categories"):
+                return try deleteCategory(request)
             default:
                 throw HTTPError.notFound("No route for \(request.method) \(request.path).")
             }
@@ -234,6 +238,39 @@ actor BackendRouter {
             categoryID: body.categoryID,
             userID: userID
         )
+
+        return try cachedSnapshot(userID: userID)
+    }
+
+    private func upsertCategory(_ request: HTTPRequest) throws -> HTTPResponse {
+        let body = try request.jsonBody(UpsertCategoryRequest.self)
+        let userID = body.userID ?? defaultUserID
+
+        let trimmedName = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw HTTPError.badRequest("name is required.")
+        }
+
+        try repository.ensureUser(id: userID)
+        try repository.upsertBudgetCategory(
+            id: body.id ?? UUID().uuidString,
+            userID: userID,
+            name: trimmedName,
+            monthlyLimitMinorUnits: body.monthlyLimitMinorUnits
+        )
+
+        return try cachedSnapshot(userID: userID)
+    }
+
+    private func deleteCategory(_ request: HTTPRequest) throws -> HTTPResponse {
+        let body = try request.jsonBody(DeleteCategoryRequest.self)
+        let userID = body.userID ?? defaultUserID
+
+        guard !body.id.isEmpty else {
+            throw HTTPError.badRequest("id is required.")
+        }
+
+        try repository.deleteBudgetCategory(id: body.id, userID: userID)
 
         return try cachedSnapshot(userID: userID)
     }

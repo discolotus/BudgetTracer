@@ -69,6 +69,16 @@ public struct BudgetCategory: Identifiable, Hashable, Sendable {
     }
 }
 
+public extension BudgetCategory {
+    /// Seeded for a new or empty user so the Budgets tab and category picker are never blank.
+    static let defaultSeed: [BudgetCategory] = [
+        BudgetCategory(id: "default-income", name: "Income"),
+        BudgetCategory(id: "default-housing", name: "Housing"),
+        BudgetCategory(id: "default-groceries", name: "Groceries"),
+        BudgetCategory(id: "default-other", name: "Other")
+    ]
+}
+
 public struct BudgetTransaction: Identifiable, Hashable, Sendable {
     public var id: String
     public var accountID: FinancialAccount.ID

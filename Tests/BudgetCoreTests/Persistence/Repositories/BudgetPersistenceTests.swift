@@ -374,6 +374,79 @@ final class BudgetPersistenceTests: XCTestCase {
         XCTAssertNil(snapshot.transactions.first?.categoryID)
     }
 
+    func testEnsureUserSeedsDefaultCategoriesOnceAndIsIdempotent() throws {
+        let repository = try makeRepository()
+        try repository.ensureUser(id: "user-1")
+
+        var snapshot = try repository.fetchSnapshot(userID: "user-1")
+        XCTAssertEqual(snapshot.categories.map(\.name), ["Groceries", "Housing", "Income", "Other"])
+
+        // Calling again must not duplicate.
+        try repository.ensureUser(id: "user-1")
+        snapshot = try repository.fetchSnapshot(userID: "user-1")
+        XCTAssertEqual(snapshot.categories.count, 4)
+    }
+
+    func testDeleteBudgetCategoryClearsTransactionAnnotation() throws {
+        let repository = try makeRepository()
+        try repository.ensureUser(id: "user-1")
+        try repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-1",
+                userID: "user-1",
+                plaidItemID: "plaid-item-1",
+                institutionID: nil,
+                accessTokenRef: "vault://token/item-1",
+                transactionsCursor: nil
+            )
+        )
+        try repository.upsertAccount(
+            StoredAccount(
+                id: "account-1",
+                userID: "user-1",
+                itemID: "item-1",
+                plaidAccountID: "account-1",
+                name: "Checking",
+                officialName: nil,
+                kind: .checking,
+                plaidType: "depository",
+                plaidSubtype: "checking",
+                mask: nil,
+                currencyCode: "USD",
+                currentBalanceMinorUnits: 100_000,
+                availableBalanceMinorUnits: nil
+            )
+        )
+        try repository.upsertTransaction(
+            StoredTransaction(
+                id: "txn-1",
+                userID: "user-1",
+                itemID: "item-1",
+                accountID: "account-1",
+                plaidTransactionID: "txn-1",
+                pendingTransactionID: nil,
+                merchantName: "City Power",
+                originalName: nil,
+                postedDate: DateCoding.day(from: "2026-06-01")!,
+                authorizedDate: nil,
+                amountMinorUnits: -12_000,
+                currencyCode: "USD",
+                paymentChannel: nil,
+                personalFinanceCategoryPrimary: nil,
+                personalFinanceCategoryDetailed: nil,
+                isPending: false
+            )
+        )
+        try repository.upsertBudgetCategory(id: "cat-x", userID: "user-1", name: "Custom")
+        try repository.setCategory(transactionID: "txn-1", categoryID: "cat-x", userID: "user-1")
+
+        try repository.deleteBudgetCategory(id: "cat-x", userID: "user-1")
+        let snapshot = try repository.fetchSnapshot(userID: "user-1")
+
+        XCTAssertFalse(snapshot.categories.contains { $0.id == "cat-x" })
+        XCTAssertNil(snapshot.transactions.first { $0.id == "txn-1" }?.categoryID)
+    }
+
     private func makeRepository() throws -> BudgetRepository {
         let database = try SQLiteDatabase(path: ":memory:")
         let repository = BudgetRepository(database: database)

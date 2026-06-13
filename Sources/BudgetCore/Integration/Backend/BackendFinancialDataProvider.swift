@@ -106,6 +106,47 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
         return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
     }
 
+    public func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot {
+        try await sendJSON(
+            path: "categories",
+            method: "PUT",
+            body: UpsertCategoryRequest(
+                id: category.id,
+                name: category.name,
+                monthlyLimitMinorUnits: category.monthlyLimit?.minorUnits
+            )
+        )
+    }
+
+    public func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot {
+        try await sendJSON(
+            path: "categories",
+            method: "DELETE",
+            body: DeleteCategoryRequest(id: id)
+        )
+    }
+
+    private func sendJSON<RequestBody: Encodable>(
+        path: String,
+        method: String,
+        body: RequestBody
+    ) async throws -> BudgetSnapshot {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw BackendFinancialDataProviderError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
+    }
+
     private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody
@@ -201,6 +242,22 @@ private struct UpdateCategoryRequest: Encodable {
         case transactionID = "transaction_id"
         case categoryID = "category_id"
     }
+}
+
+private struct UpsertCategoryRequest: Encodable {
+    var id: String?
+    var name: String
+    var monthlyLimitMinorUnits: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case monthlyLimitMinorUnits = "monthly_limit_minor_units"
+    }
+}
+
+private struct DeleteCategoryRequest: Encodable {
+    var id: String
 }
 
 private struct BackendUserScopedRequest: Encodable {
