@@ -7,17 +7,23 @@ import Foundation
 actor BackendRouter {
     private let repository: BudgetRepository
     private let plaidSyncService: PlaidSyncService
+    private let plaidRelayClient: PlaidAPIClientProtocol
+    private let relayIdentityVerifier: RelayIdentityVerifying
     private let defaultUserID: String
     private let clock: @Sendable () -> Date
 
     init(
         repository: BudgetRepository,
         plaidSyncService: PlaidSyncService,
+        plaidRelayClient: PlaidAPIClientProtocol,
+        relayIdentityVerifier: RelayIdentityVerifying = BearerRelayIdentityVerifier(),
         defaultUserID: String,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.repository = repository
         self.plaidSyncService = plaidSyncService
+        self.plaidRelayClient = plaidRelayClient
+        self.relayIdentityVerifier = relayIdentityVerifier
         self.defaultUserID = defaultUserID
         self.clock = clock
     }
@@ -39,6 +45,16 @@ actor BackendRouter {
                 return try await sync(request)
             case ("POST", "/plaid/webhook"):
                 return try await webhook(request)
+            case ("POST", "/v1/plaid/link-token"):
+                return try await relayCreateLinkToken(request)
+            case ("POST", "/v1/plaid/exchange-public-token"):
+                return try await relayExchangePublicToken(request)
+            case ("POST", "/v1/plaid/accounts/get"):
+                return try await relayGetAccounts(request)
+            case ("POST", "/v1/plaid/transactions/sync"):
+                return try await relaySyncTransactions(request)
+            case ("POST", "/v1/plaid/item/remove"):
+                return try await relayRemoveItem(request)
             case ("PATCH", "/transactions/regular-monthly"):
                 return try updateRegularMonthly(request)
             case ("PATCH", "/transactions/category"):
@@ -208,6 +224,66 @@ actor BackendRouter {
         return HTTPResponse.json(status: .accepted, body: WebhookResponse(accepted: true, syncedItemID: syncedItemID))
     }
 
+    private func relayCreateLinkToken(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let subject = try await relayIdentityVerifier.verifiedSubject(from: request)
+        let body = try request.jsonBody(RelayLinkTokenRequest.self)
+        let linkToken = try await plaidRelayClient.createLinkToken(userID: body.clientUserID ?? subject).linkToken
+        return HTTPResponse.json(body: LinkTokenResponse(linkToken: linkToken))
+    }
+
+    private func relayExchangePublicToken(_ request: HTTPRequest) async throws -> HTTPResponse {
+        _ = try await relayIdentityVerifier.verifiedSubject(from: request)
+        let body = try request.jsonBody(RelayExchangePublicTokenRequest.self)
+        guard !body.publicToken.isEmpty else {
+            throw HTTPError.badRequest("public_token is required.")
+        }
+
+        let exchange = try await plaidRelayClient.exchangePublicToken(body.publicToken)
+        return HTTPResponse.json(
+            body: RelayExchangePublicTokenResponse(
+                accessToken: exchange.accessToken,
+                itemID: exchange.itemID,
+                plaidItemID: exchange.itemID
+            )
+        )
+    }
+
+    private func relayGetAccounts(_ request: HTTPRequest) async throws -> HTTPResponse {
+        _ = try await relayIdentityVerifier.verifiedSubject(from: request)
+        let body = try request.jsonBody(RelayAccessTokenRequest.self)
+        guard !body.accessToken.isEmpty else {
+            throw HTTPError.badRequest("access_token is required.")
+        }
+
+        return HTTPResponse.json(body: try await plaidRelayClient.getAccounts(accessToken: body.accessToken))
+    }
+
+    private func relaySyncTransactions(_ request: HTTPRequest) async throws -> HTTPResponse {
+        _ = try await relayIdentityVerifier.verifiedSubject(from: request)
+        let body = try request.jsonBody(RelayTransactionsSyncRequest.self)
+        guard !body.accessToken.isEmpty else {
+            throw HTTPError.badRequest("access_token is required.")
+        }
+
+        return HTTPResponse.json(
+            body: try await plaidRelayClient.syncTransactions(
+                accessToken: body.accessToken,
+                cursor: body.cursor
+            )
+        )
+    }
+
+    private func relayRemoveItem(_ request: HTTPRequest) async throws -> HTTPResponse {
+        _ = try await relayIdentityVerifier.verifiedSubject(from: request)
+        let body = try request.jsonBody(RelayAccessTokenRequest.self)
+        guard !body.accessToken.isEmpty else {
+            throw HTTPError.badRequest("access_token is required.")
+        }
+
+        _ = try await plaidRelayClient.removeItem(accessToken: body.accessToken)
+        return HTTPResponse.json(body: RelayEmptyResponse())
+    }
+
     private func updateRegularMonthly(_ request: HTTPRequest) throws -> HTTPResponse {
         let body = try request.jsonBody(UpdateRegularMonthlyRequest.self)
         let userID = body.userID ?? defaultUserID
@@ -323,4 +399,74 @@ private enum SnapshotFreshnessPolicy {
 
 private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+protocol RelayIdentityVerifying: Sendable {
+    func verifiedSubject(from request: HTTPRequest) async throws -> String
+}
+
+struct BearerRelayIdentityVerifier: RelayIdentityVerifying {
+    var minimumTokenLength = 16
+
+    func verifiedSubject(from request: HTTPRequest) async throws -> String {
+        guard let authorization = request.headers["authorization"],
+              authorization.lowercased().hasPrefix("bearer ") else {
+            throw HTTPError.unauthorized("A Sign in with Apple bearer token is required.")
+        }
+
+        let token = authorization.dropFirst("Bearer ".count).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.count >= minimumTokenLength else {
+            throw HTTPError.unauthorized("The bearer token is invalid.")
+        }
+
+        return String(token.prefix(24))
+    }
+}
+
+enum SensitiveLogRedactor {
+    private static let sensitiveKeys: Set<String> = [
+        "access_token",
+        "public_token",
+        "link_token",
+        "account_id",
+        "transaction_id",
+        "merchant_name",
+        "name",
+        "current",
+        "available",
+        "balance",
+        "amount"
+    ]
+
+    static func redactJSON(_ data: Data) -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            return "<redacted>"
+        }
+
+        let redacted = redact(object)
+        guard let data = try? JSONSerialization.data(withJSONObject: redacted, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return "<redacted>"
+        }
+
+        return string
+    }
+
+    private static func redact(_ value: Any) -> Any {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, pair in
+                if sensitiveKeys.contains(pair.key) || sensitiveKeys.contains(pair.key.lowercased()) {
+                    result[pair.key] = "<redacted>"
+                } else {
+                    result[pair.key] = redact(pair.value)
+                }
+            }
+        }
+
+        if let array = value as? [Any] {
+            return array.map(redact)
+        }
+
+        return value
+    }
 }

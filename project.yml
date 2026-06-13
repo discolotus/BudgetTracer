@@ -30,6 +30,7 @@ targets:
         PRODUCT_NAME: BudgetTracer
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_FILE: Apps/BudgetTraceriOS/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Apps/BudgetTraceriOS/BudgetTracer.entitlements
         CODE_SIGNING_ALLOWED: "NO"
     dependencies:
       - package: BudgetTracerPackage
@@ -48,6 +49,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.budgettracer.mac
         PRODUCT_NAME: BudgetTracer
         INFOPLIST_FILE: Apps/BudgetTracerMac/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Apps/BudgetTracerMac/BudgetTracer.entitlements
         CODE_SIGNING_ALLOWED: "NO"
     dependencies:
       - package: BudgetTracerPackage

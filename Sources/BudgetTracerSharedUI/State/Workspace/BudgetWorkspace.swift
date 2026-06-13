@@ -18,6 +18,8 @@ public final class BudgetWorkspace: ObservableObject {
     @Published public private(set) var plaidLinkState: PlaidLinkState
     @Published public private(set) var accountOverrides: [FinancialAccount.ID: AccountOverride]
 
+    public let requiresAppLock: Bool
+
     private let dataProvider: FinancialDataProvider
     private let userDefaults: UserDefaults
     private static let accountOverridesStorageKey = "BudgetTracer.accountOverrides.v1"
@@ -27,14 +29,18 @@ public final class BudgetWorkspace: ObservableObject {
         connectionState: PlaidConnectionState = .notConnected,
         plaidLinkState: PlaidLinkState = .idle,
         dataProvider: FinancialDataProvider = PlaidDataProvider(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        requiresAppLock: Bool = false
     ) {
         self.snapshot = snapshot
         self.connectionState = connectionState
         self.plaidLinkState = plaidLinkState
         self.dataProvider = dataProvider
         self.userDefaults = userDefaults
-        self.accountOverrides = Self.loadAccountOverrides(from: userDefaults)
+        self.requiresAppLock = requiresAppLock
+        self.accountOverrides = dataProvider.storesAccountOverrides
+            ? snapshot.accountOverrides
+            : Self.loadAccountOverrides(from: userDefaults)
     }
 
     public var displaySnapshot: BudgetSnapshot {
@@ -46,7 +52,7 @@ public final class BudgetWorkspace: ObservableObject {
 
         do {
             let freshnessPolicy: BudgetSnapshotFreshnessPolicy = forceSync ? .forceSync : .syncIfStale(maxAge: 300)
-            snapshot = try await dataProvider.fetchBudgetSnapshot(freshnessPolicy: freshnessPolicy)
+            applySnapshot(try await dataProvider.fetchBudgetSnapshot(freshnessPolicy: freshnessPolicy))
             markConnected()
         } catch {
             connectionState = .failed(message: error.localizedDescription)
@@ -71,7 +77,7 @@ public final class BudgetWorkspace: ObservableObject {
         plaidLinkState = .exchanging
 
         do {
-            snapshot = try await dataProvider.exchangePlaidPublicToken(publicToken, institutionID: institutionID)
+            applySnapshot(try await dataProvider.exchangePlaidPublicToken(publicToken, institutionID: institutionID))
             markConnected()
             plaidLinkState = .succeeded
         } catch {
@@ -83,7 +89,7 @@ public final class BudgetWorkspace: ObservableObject {
         plaidLinkState = .exchanging
 
         do {
-            snapshot = try await dataProvider.createSandboxPlaidItem(institutionID: institutionID)
+            applySnapshot(try await dataProvider.createSandboxPlaidItem(institutionID: institutionID))
             markConnected()
             plaidLinkState = .succeeded
         } catch {
@@ -117,7 +123,7 @@ public final class BudgetWorkspace: ObservableObject {
                 for id in transactionIDs {
                     latest = try await dataProvider.setRegularMonthly(transactionID: id, isRegularMonthly: isRecurring)
                 }
-                snapshot = latest
+                applySnapshot(latest)
                 markConnected()
             } catch {
                 connectionState = .failed(message: error.localizedDescription)
@@ -162,7 +168,7 @@ public final class BudgetWorkspace: ObservableObject {
                 for id in transactionIDs {
                     latest = try await dataProvider.setCategory(transactionID: id, categoryID: categoryID)
                 }
-                snapshot = latest
+                applySnapshot(latest)
                 markConnected()
             } catch {
                 connectionState = .failed(message: error.localizedDescription)
@@ -183,9 +189,11 @@ public final class BudgetWorkspace: ObservableObject {
 
         Task {
             do {
-                snapshot = try await dataProvider.setCategory(
-                    transactionID: transactionID,
-                    categoryID: categoryID
+                applySnapshot(
+                    try await dataProvider.setCategory(
+                        transactionID: transactionID,
+                        categoryID: categoryID
+                    )
                 )
                 markConnected()
             } catch {
@@ -210,7 +218,7 @@ public final class BudgetWorkspace: ObservableObject {
 
         Task {
             do {
-                snapshot = try await dataProvider.saveCategory(category)
+                applySnapshot(try await dataProvider.saveCategory(category))
                 markConnected()
             } catch {
                 connectionState = .failed(message: error.localizedDescription)
@@ -232,7 +240,7 @@ public final class BudgetWorkspace: ObservableObject {
 
         Task {
             do {
-                snapshot = try await dataProvider.deleteCategory(id: categoryID)
+                applySnapshot(try await dataProvider.deleteCategory(id: categoryID))
                 markConnected()
             } catch {
                 connectionState = .failed(message: error.localizedDescription)
@@ -248,20 +256,32 @@ public final class BudgetWorkspace: ObservableObject {
         } else {
             override.includesInAvailableCash = false
         }
-        accountOverrides[accountID] = override
-        persistAccountOverrides()
+        setAccountOverride(accountID, override: override)
     }
 
     public func setAccount(_ accountID: FinancialAccount.ID, includesInAvailableCash: Bool) {
         var override = accountOverrides[accountID] ?? AccountOverride()
         override.includesInAvailableCash = includesInAvailableCash
-        accountOverrides[accountID] = override
-        persistAccountOverrides()
+        setAccountOverride(accountID, override: override)
     }
 
     public func resetAccountOverride(_ accountID: FinancialAccount.ID) {
-        accountOverrides.removeValue(forKey: accountID)
-        persistAccountOverrides()
+        setAccountOverride(accountID, override: nil)
+    }
+
+    public func deleteLocalData() {
+        snapshot = Self.emptySnapshot
+        accountOverrides = [:]
+        plaidLinkState = .idle
+        connectionState = .notConnected
+
+        Task {
+            do {
+                try await dataProvider.deleteLocalData()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
     }
 
     private static func loadAccountOverrides(from userDefaults: UserDefaults) -> [FinancialAccount.ID: AccountOverride] {
@@ -280,10 +300,49 @@ public final class BudgetWorkspace: ObservableObject {
         userDefaults.set(data, forKey: Self.accountOverridesStorageKey)
     }
 
+    private func setAccountOverride(_ accountID: FinancialAccount.ID, override: AccountOverride?) {
+        accountOverrides[accountID] = override
+
+        guard dataProvider.storesAccountOverrides else {
+            persistAccountOverrides()
+            return
+        }
+
+        Task {
+            do {
+                applySnapshot(
+                    try await dataProvider.setAccountOverride(
+                        accountID: accountID,
+                        override: override
+                    )
+                )
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func applySnapshot(_ snapshot: BudgetSnapshot) {
+        self.snapshot = snapshot
+        if dataProvider.storesAccountOverrides {
+            accountOverrides = snapshot.accountOverrides
+        }
+    }
+
     private func markConnected() {
         connectionState = .connected(
             institutionCount: snapshot.institutions.count,
             lastSyncedAt: snapshot.lastSuccessfulSyncAt
+        )
+    }
+
+    private static var emptySnapshot: BudgetSnapshot {
+        BudgetSnapshot(
+            institutions: [],
+            accounts: [],
+            categories: BudgetCategory.defaultSeed,
+            transactions: []
         )
     }
 }

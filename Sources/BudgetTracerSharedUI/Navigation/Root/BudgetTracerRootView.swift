@@ -3,6 +3,8 @@ import SwiftUI
 
 public struct BudgetTracerRootView: View {
     @StateObject private var workspace: BudgetWorkspace
+    @StateObject private var appLockController: BudgetAppLockController
+    @Environment(\.scenePhase) private var scenePhase
     @SceneStorage("BudgetTracer.selectedSection") private var selectedSectionID = BudgetSection.overview.rawValue
     @State private var isShowingSettings = false
     @State private var plaidLinkToken: String?
@@ -10,15 +12,26 @@ public struct BudgetTracerRootView: View {
     @MainActor
     public init() {
         _workspace = StateObject(wrappedValue: BudgetWorkspace())
+        _appLockController = StateObject(wrappedValue: .disabled())
     }
 
     @MainActor
     public init(workspace: BudgetWorkspace) {
         _workspace = StateObject(wrappedValue: workspace)
+        _appLockController = StateObject(
+            wrappedValue: BudgetAppLockController(isEnabled: workspace.requiresAppLock)
+        )
     }
 
     public var body: some View {
-        navigationShell
+        ZStack {
+            navigationShell
+
+            if shouldShowPrivacyCover {
+                AppLockPrivacyCover(controller: appLockController)
+                    .zIndex(1)
+            }
+        }
             .tint(BudgetTracerStyle.accent)
             .budgetTracerSettingsSheet(isPresented: $isShowingSettings)
         .budgetTracerPlaidLinkSheet(
@@ -39,6 +52,12 @@ public struct BudgetTracerRootView: View {
             }
         )
         .task {
+            if appLockController.isEnabled {
+                await appLockController.unlock()
+            }
+            guard !appLockController.isLocked else {
+                return
+            }
             if case .notConnected = workspace.connectionState {
                 return
             }
@@ -53,6 +72,22 @@ public struct BudgetTracerRootView: View {
                 selectedSectionID = initialSectionID
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                if appLockController.isLocked {
+                    Task { await appLockController.unlock() }
+                }
+            } else {
+                appLockController.lock()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .budgetTracerDeleteLocalDataRequested)) { _ in
+            workspace.deleteLocalData()
+        }
+    }
+
+    private var shouldShowPrivacyCover: Bool {
+        appLockController.isLocked || (appLockController.isEnabled && scenePhase != .active)
     }
 
     @ViewBuilder
@@ -355,6 +390,7 @@ private extension View {
 
 public extension Notification.Name {
     static let budgetTracerRefreshRequested = Notification.Name("BudgetTracerRefreshRequested")
+    static let budgetTracerDeleteLocalDataRequested = Notification.Name("BudgetTracerDeleteLocalDataRequested")
 }
 
 private enum BudgetSection: String, CaseIterable, Identifiable {

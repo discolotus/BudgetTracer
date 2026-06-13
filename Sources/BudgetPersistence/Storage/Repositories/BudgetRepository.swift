@@ -382,6 +382,68 @@ public final class BudgetRepository {
         )
     }
 
+    public func setAccountOverride(accountID: String, override: AccountOverride?, userID: String) throws {
+        guard let override, override.kind != nil || override.includesInAvailableCash != nil else {
+            try database.run(
+                "DELETE FROM account_overrides WHERE account_id = ? AND user_id = ?",
+                bindings: [.text(accountID), .text(userID)]
+            )
+            return
+        }
+
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO account_overrides(
+              account_id, user_id, kind, includes_in_available_cash, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+              kind = excluded.kind,
+              includes_in_available_cash = excluded.includes_in_available_cash,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(accountID),
+                .text(userID),
+                override.kind.map { .text($0.rawValue) } ?? .null,
+                override.includesInAvailableCash.map(SQLiteValue.bool) ?? .null,
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    public func accountOverrides(userID: String) throws -> [FinancialAccount.ID: AccountOverride] {
+        let rows = try database.query(
+            """
+            SELECT account_id, kind, includes_in_available_cash
+            FROM account_overrides
+            WHERE user_id = ?
+            """,
+            bindings: [.text(userID)]
+        )
+
+        let pairs = try rows.map { row in
+            let accountID = try requiredString("account_id", row)
+            let kind = row["kind"]?.string.flatMap(AccountKind.init(rawValue:))
+            let includesInAvailableCash = row["includes_in_available_cash"]?.bool
+            return (
+                accountID,
+                AccountOverride(kind: kind, includesInAvailableCash: includesInAvailableCash)
+            )
+        }
+
+        return Dictionary(uniqueKeysWithValues: pairs)
+    }
+
+    public func deleteAllData(userID: String) throws {
+        try database.run(
+            "DELETE FROM users WHERE id = ?",
+            bindings: [.text(userID)]
+        )
+    }
+
     public func recordWebhookEvent(_ event: PlaidWebhookEventRecord) throws {
         try database.run(
             """
@@ -605,12 +667,15 @@ public final class BudgetRepository {
             bindings: [.text(userID)]
         ).map { try requiredString("plaid_transaction_id", $0) })
 
+        let accountOverrides = try accountOverrides(userID: userID)
+
         return BudgetSnapshot(
             institutions: institutions,
             accounts: accounts,
             categories: categories,
             transactions: transactions,
             recurringTransactionIDs: recurringIDs,
+            accountOverrides: accountOverrides,
             lastSuccessfulSyncAt: try snapshotLastSuccessfulSyncAt(userID: userID)
         )
     }

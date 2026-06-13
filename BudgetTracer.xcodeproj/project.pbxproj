@@ -20,7 +20,9 @@
 		31600E7BBC542BA03DF2845F /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		4ED9794C5FC55EEF2FA98ABF /* BudgetTracerMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BudgetTracerMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		66D362B8B8C5CEE40A8E6B57 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8DFE3BE7F039471EB8B89B0C /* BudgetTracer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BudgetTracer.entitlements; sourceTree = "<group>"; };
 		BC49EE848DF5C6DA4CB14056 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D64548A99BB94872AF883DD9 /* BudgetTracer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BudgetTracer.entitlements; sourceTree = "<group>"; };
 		EA04C153E24D1550CC04BF69 /* BudgetTracerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetTracerIOSApp.swift; sourceTree = "<group>"; };
 		F470B91DB5289A16A7513CFF /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		F5455D891BF551AC0A32A1AE /* BudgetTracerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetTracerMacApp.swift; sourceTree = "<group>"; };
@@ -61,6 +63,7 @@
 			isa = PBXGroup;
 			children = (
 				BC49EE848DF5C6DA4CB14056 /* Info.plist */,
+				D64548A99BB94872AF883DD9 /* BudgetTracer.entitlements */,
 				6D153A538E1B22BA681559EE /* App */,
 				FAB1A47FBFDB6A7A29E39AEB /* Resources */,
 			);
@@ -146,6 +149,7 @@
 			isa = PBXGroup;
 			children = (
 				66D362B8B8C5CEE40A8E6B57 /* Info.plist */,
+				8DFE3BE7F039471EB8B89B0C /* BudgetTracer.entitlements */,
 				2020344EE33353E18610026A /* App */,
 				B092A725DDACB619209738B5 /* Resources */,
 			);
@@ -330,6 +334,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = Apps/BudgetTracerMac/BudgetTracer.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = Apps/BudgetTracerMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -347,6 +352,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = Apps/BudgetTracerMac/BudgetTracer.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = Apps/BudgetTracerMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -365,6 +371,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = Apps/BudgetTraceriOS/BudgetTracer.entitlements;
 				INFOPLIST_FILE = Apps/BudgetTraceriOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -444,6 +451,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = Apps/BudgetTraceriOS/BudgetTracer.entitlements;
 				INFOPLIST_FILE = Apps/BudgetTraceriOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

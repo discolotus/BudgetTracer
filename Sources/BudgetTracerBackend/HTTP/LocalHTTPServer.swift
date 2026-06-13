@@ -205,6 +205,7 @@ enum HTTPStatus: Int {
     case ok = 200
     case accepted = 202
     case badRequest = 400
+    case unauthorized = 401
     case notFound = 404
     case methodNotAllowed = 405
     case internalServerError = 500
@@ -217,6 +218,8 @@ enum HTTPStatus: Int {
             return "Accepted"
         case .badRequest:
             return "Bad Request"
+        case .unauthorized:
+            return "Unauthorized"
         case .notFound:
             return "Not Found"
         case .methodNotAllowed:
@@ -229,12 +232,13 @@ enum HTTPStatus: Int {
 
 enum HTTPError: Error, LocalizedError {
     case badRequest(String)
+    case unauthorized(String)
     case notFound(String)
     case methodNotAllowed(String)
 
     var errorDescription: String? {
         switch self {
-        case let .badRequest(message), let .notFound(message), let .methodNotAllowed(message):
+        case let .badRequest(message), let .unauthorized(message), let .notFound(message), let .methodNotAllowed(message):
             return message
         }
     }
@@ -243,6 +247,8 @@ enum HTTPError: Error, LocalizedError {
         switch self {
         case .badRequest:
             return .badRequest
+        case .unauthorized:
+            return .unauthorized
         case .notFound:
             return .notFound
         case .methodNotAllowed:

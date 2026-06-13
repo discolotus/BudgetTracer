@@ -42,7 +42,7 @@ struct PlaidLinkTransactions: Encodable {
     }
 }
 
-public struct PlaidLinkTokenResponse: Decodable, Hashable, Sendable {
+public struct PlaidLinkTokenResponse: Codable, Hashable, Sendable {
     public var linkToken: String
     public var expiration: String
     public var requestID: String?
@@ -74,7 +74,7 @@ struct PlaidSandboxPublicTokenRequest: Encodable {
     }
 }
 
-public struct PlaidSandboxPublicTokenResponse: Decodable, Hashable, Sendable {
+public struct PlaidSandboxPublicTokenResponse: Codable, Hashable, Sendable {
     public var publicToken: String
     public var requestID: String?
 
@@ -101,7 +101,7 @@ struct PlaidPublicTokenExchangeRequest: Encodable {
     }
 }
 
-public struct PlaidPublicTokenExchangeResponse: Decodable, Hashable, Sendable {
+public struct PlaidPublicTokenExchangeResponse: Codable, Hashable, Sendable {
     public var accessToken: String
     public var itemID: String
     public var requestID: String?
@@ -145,7 +145,31 @@ struct PlaidAccountsGetRequest: Encodable {
     }
 }
 
-public struct PlaidAccountsGetResponse: Decodable, Hashable, Sendable {
+struct PlaidItemRemoveRequest: Encodable {
+    var clientID: String
+    var secret: String
+    var accessToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case clientID = "client_id"
+        case secret
+        case accessToken = "access_token"
+    }
+}
+
+public struct PlaidItemRemoveResponse: Codable, Hashable, Sendable {
+    public var requestID: String?
+
+    public init(requestID: String?) {
+        self.requestID = requestID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+    }
+}
+
+public struct PlaidAccountsGetResponse: Codable, Hashable, Sendable {
     public var accounts: [PlaidAccount]
     public var requestID: String?
 
@@ -162,7 +186,7 @@ public struct PlaidAccountsGetResponse: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidTransactionsSyncResponse: Decodable, Hashable, Sendable {
+public struct PlaidTransactionsSyncResponse: Codable, Hashable, Sendable {
     public var accounts: [PlaidAccount]
     public var added: [PlaidTransaction]
     public var modified: [PlaidTransaction]
@@ -199,7 +223,7 @@ public struct PlaidTransactionsSyncResponse: Decodable, Hashable, Sendable {
         requestID: nil
     )
 
-    mutating func append(_ page: PlaidTransactionsSyncResponse) {
+    public mutating func append(_ page: PlaidTransactionsSyncResponse) {
         accounts.append(contentsOf: page.accounts)
         added.append(contentsOf: page.added)
         modified.append(contentsOf: page.modified)
@@ -220,7 +244,7 @@ public struct PlaidTransactionsSyncResponse: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidAccount: Decodable, Hashable, Sendable {
+public struct PlaidAccount: Codable, Hashable, Sendable {
     public var accountID: String
     public var balances: PlaidBalances
     public var mask: String?
@@ -258,7 +282,7 @@ public struct PlaidAccount: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidBalances: Decodable, Hashable, Sendable {
+public struct PlaidBalances: Codable, Hashable, Sendable {
     public var available: Decimal?
     public var current: Decimal?
     public var isoCurrencyCode: String?
@@ -279,7 +303,7 @@ public struct PlaidBalances: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidTransaction: Decodable, Hashable, Sendable {
+public struct PlaidTransaction: Codable, Hashable, Sendable {
     public var transactionID: String
     public var accountID: String
     public var pendingTransactionID: String?
@@ -349,7 +373,7 @@ public struct PlaidTransaction: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidPersonalFinanceCategory: Decodable, Hashable, Sendable {
+public struct PlaidPersonalFinanceCategory: Codable, Hashable, Sendable {
     public var primary: String?
     public var detailed: String?
 
@@ -359,7 +383,7 @@ public struct PlaidPersonalFinanceCategory: Decodable, Hashable, Sendable {
     }
 }
 
-public struct PlaidRemovedTransaction: Decodable, Hashable, Sendable {
+public struct PlaidRemovedTransaction: Codable, Hashable, Sendable {
     public var transactionID: String
     public var accountID: String?
 

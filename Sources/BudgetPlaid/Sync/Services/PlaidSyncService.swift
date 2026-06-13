@@ -154,7 +154,7 @@ private func sanitizedErrorMessage(_ error: Error) -> String {
     return String(message.prefix(500))
 }
 
-private extension PlaidAccount {
+public extension PlaidAccount {
     func storedAccount(userID: String, itemID: String) -> StoredAccount {
         let currencyCode = balances.isoCurrencyCode ?? "USD"
         return StoredAccount(
@@ -194,7 +194,7 @@ private extension PlaidAccount {
     }
 }
 
-private extension PlaidTransaction {
+public extension PlaidTransaction {
     func storedTransaction(userID: String, itemID: String) throws -> StoredTransaction {
         guard let postedDate = DateCoding.day(from: date) else {
             throw PlaidSyncError.invalidPlaidDate(date)

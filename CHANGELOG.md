@@ -2,6 +2,20 @@
 
 All notable changes to BudgetTracer are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Secure local App Store data mode with SQLCipher-encrypted SQLite, Keychain-backed SQLCipher key material and Plaid access tokens, and device-owner app unlock before showing financial data.
+- Stateless authenticated Plaid relay endpoints for Link token creation, public token exchange, accounts, transaction sync, and item removal.
+- Sign in with Apple relay authentication support, App Store entitlements, and an ADR documenting the one-local-user secure storage model.
+- Delete Local Data flow that removes the encrypted ledger, Keychain secrets, cached state, and attempts Plaid item removal.
+
+### Changed
+
+- Budget persistence now links Zetetic's official SQLCipher Swift package instead of system SQLite for the app's repository layer.
+- Account overrides, sync cursors, institutions, accounts, transactions, recurring flags, and categories are persisted through the repository for secure-local mode instead of `UserDefaults`.
+
 ## [1.1.0] - 2026-06-10
 
 ### Added

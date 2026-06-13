@@ -42,9 +42,17 @@ struct BudgetTracerBackendApp {
             repository: repository,
             tokenVault: tokenVault
         )
+        let relayIdentityVerifier: RelayIdentityVerifying = if let audience = configuration.appleIdentityAudience,
+                                                               !audience.isEmpty {
+            AppleIdentityRelayVerifier(audience: audience)
+        } else {
+            BearerRelayIdentityVerifier()
+        }
         let router = BackendRouter(
             repository: repository,
             plaidSyncService: plaidSyncService,
+            plaidRelayClient: plaidClient,
+            relayIdentityVerifier: relayIdentityVerifier,
             defaultUserID: configuration.defaultUserID
         )
         let server = LocalHTTPServer(port: configuration.port) { request in

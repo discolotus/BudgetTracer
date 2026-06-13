@@ -486,6 +486,10 @@ private final class FakePlaidClient: PlaidAPIClientProtocol {
 
         return syncResponses.removeFirst()
     }
+
+    func removeItem(accessToken: String) async throws -> PlaidItemRemoveResponse {
+        PlaidItemRemoveResponse(requestID: nil)
+    }
 }
 
 private enum PlaidSyncTestError: Error {

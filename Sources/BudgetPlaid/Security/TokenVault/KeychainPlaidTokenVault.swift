@@ -1,5 +1,6 @@
 import Foundation
 
+#if os(macOS)
 public final class KeychainPlaidTokenVault: PlaidTokenVault {
     private let serviceName: String
     private var cachedTokens: [String: String] = [:]
@@ -123,3 +124,32 @@ enum KeychainError: Error, LocalizedError {
         }
     }
 }
+#else
+public final class KeychainPlaidTokenVault: PlaidTokenVault {
+    public init(serviceName: String = "com.budgettracer.plaid.access-tokens") {}
+
+    public func storeAccessToken(_ accessToken: String, userID: String, plaidItemID: String) throws -> String {
+        throw KeychainError.unsupportedPlatform
+    }
+
+    public func accessToken(for reference: String) throws -> String {
+        throw KeychainError.unsupportedPlatform
+    }
+}
+
+public enum PlaidCredentialKeychain {
+    public static let sandboxServiceName = "com.budgettracer.plaid.sandbox"
+
+    public static func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
+        throw KeychainError.unsupportedPlatform
+    }
+}
+
+enum KeychainError: Error, LocalizedError {
+    case unsupportedPlatform
+
+    var errorDescription: String? {
+        "The development Plaid Keychain vault is only available on macOS."
+    }
+}
+#endif

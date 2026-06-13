@@ -10,6 +10,7 @@ struct BackendConfiguration {
     var plaidSecretsPath: String?
     var plaidTokenVault: PlaidTokenVaultMode
     var plaidTokenVaultPath: String
+    var appleIdentityAudience: String?
 
     static func load(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> BackendConfiguration {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -36,7 +37,8 @@ struct BackendConfiguration {
             plaidSecretsPath: environment["BUDGETTRACER_PLAID_SECRETS_PATH"] ?? defaultSecretsPath,
             plaidTokenVault: tokenVaultMode,
             plaidTokenVaultPath: environment["BUDGETTRACER_PLAID_TOKEN_VAULT_PATH"]
-                ?? secretsDirectory.appendingPathComponent("plaid_access_tokens.json").path
+                ?? secretsDirectory.appendingPathComponent("plaid_access_tokens.json").path,
+            appleIdentityAudience: environment["BUDGETTRACER_APPLE_AUDIENCE"]
         )
     }
 }

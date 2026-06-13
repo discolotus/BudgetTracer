@@ -6,6 +6,7 @@ public protocol PlaidAPIClientProtocol {
     func exchangePublicToken(_ publicToken: String) async throws -> PlaidPublicTokenExchangeResponse
     func getAccounts(accessToken: String) async throws -> PlaidAccountsGetResponse
     func syncTransactions(accessToken: String, cursor: String?) async throws -> PlaidTransactionsSyncResponse
+    func removeItem(accessToken: String) async throws -> PlaidItemRemoveResponse
 }
 
 public final class PlaidAPIClient: PlaidAPIClientProtocol {
@@ -110,6 +111,19 @@ public final class PlaidAPIClient: PlaidAPIClientProtocol {
             hasMore = page.hasMore
         }
 
+        return response
+    }
+
+    public func removeItem(accessToken: String) async throws -> PlaidItemRemoveResponse {
+        let configuration = try configurationProvider()
+        let response: PlaidItemRemoveResponse = try await post(
+            path: "/item/remove",
+            body: PlaidItemRemoveRequest(
+                clientID: configuration.clientID,
+                secret: configuration.secret,
+                accessToken: accessToken
+            )
+        )
         return response
     }
 

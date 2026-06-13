@@ -157,6 +157,56 @@ struct DeleteCategoryRequest: Decodable {
     }
 }
 
+struct RelayLinkTokenRequest: Decodable {
+    var clientUserID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case clientUserID = "client_user_id"
+    }
+}
+
+struct RelayExchangePublicTokenRequest: Decodable {
+    var publicToken: String
+    var institutionID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case publicToken = "public_token"
+        case institutionID = "institution_id"
+    }
+}
+
+struct RelayExchangePublicTokenResponse: Encodable {
+    var accessToken: String
+    var itemID: String
+    var plaidItemID: String
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case itemID = "item_id"
+        case plaidItemID = "plaid_item_id"
+    }
+}
+
+struct RelayAccessTokenRequest: Decodable {
+    var accessToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+    }
+}
+
+struct RelayTransactionsSyncRequest: Decodable {
+    var accessToken: String
+    var cursor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case cursor
+    }
+}
+
+struct RelayEmptyResponse: Encodable {}
+
 struct SnapshotResponse: Encodable {
     var institutions: [InstitutionResponse]
     var accounts: [AccountResponse]

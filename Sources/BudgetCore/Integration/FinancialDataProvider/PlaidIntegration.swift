@@ -14,6 +14,8 @@ public enum BudgetSnapshotFreshnessPolicy: Hashable, Sendable {
 }
 
 public protocol FinancialDataProvider: Sendable {
+    var storesAccountOverrides: Bool { get }
+
     func fetchBudgetSnapshot() async throws -> BudgetSnapshot
     func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot
     func createPlaidLinkToken() async throws -> String
@@ -21,11 +23,15 @@ public protocol FinancialDataProvider: Sendable {
     func createSandboxPlaidItem(institutionID: String?) async throws -> BudgetSnapshot
     func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot
     func setCategory(transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) async throws -> BudgetSnapshot
+    func setAccountOverride(accountID: FinancialAccount.ID, override: AccountOverride?) async throws -> BudgetSnapshot
     func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot
     func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot
+    func deleteLocalData() async throws
 }
 
 public extension FinancialDataProvider {
+    var storesAccountOverrides: Bool { false }
+
     func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot {
         try await fetchBudgetSnapshot()
     }
@@ -51,6 +57,12 @@ public extension FinancialDataProvider {
             updated.categoryID = categoryID
             return updated
         }
+        return snapshot
+    }
+
+    func setAccountOverride(accountID: FinancialAccount.ID, override: AccountOverride?) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        snapshot.accountOverrides[accountID] = override
         return snapshot
     }
 
@@ -90,6 +102,8 @@ public extension FinancialDataProvider {
     func createSandboxPlaidItem(institutionID: String? = nil) async throws -> BudgetSnapshot {
         throw PlaidIntegrationError.requiresBackend
     }
+
+    func deleteLocalData() async throws {}
 }
 
 public struct PlaidDataProvider: FinancialDataProvider {

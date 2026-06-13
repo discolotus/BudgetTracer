@@ -60,6 +60,17 @@ public enum DatabaseSchema {
     CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
     CREATE INDEX IF NOT EXISTS idx_accounts_item_id ON accounts(item_id);
 
+    CREATE TABLE IF NOT EXISTS account_overrides (
+      account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT,
+      includes_in_available_cash INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_account_overrides_user_id ON account_overrides(user_id);
+
     CREATE TABLE IF NOT EXISTS budget_categories (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

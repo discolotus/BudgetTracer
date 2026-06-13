@@ -1,19 +1,36 @@
 import Foundation
-import SQLite3
+import SQLCipher
 
 public final class SQLiteDatabase {
     private var handle: OpaquePointer?
 
-    public init(path: String) throws {
+    public init(path: String, encryptionKey: SQLiteEncryptionKey? = nil) throws {
         guard sqlite3_open(path, &handle) == SQLITE_OK else {
             throw SQLiteError.open(message: SQLiteDatabase.message(for: handle))
+        }
+
+        if let encryptionKey {
+            try configureSQLCipher(key: encryptionKey)
         }
 
         try execute("PRAGMA foreign_keys = ON;")
     }
 
     deinit {
+        close()
+    }
+
+    public func close() {
+        guard let handle else {
+            return
+        }
+
         sqlite3_close(handle)
+        self.handle = nil
+    }
+
+    public func cipherVersion() throws -> String? {
+        try query("PRAGMA cipher_version;").first?["cipher_version"]?.string
     }
 
     public func execute(_ sql: String) throws {
@@ -72,6 +89,19 @@ public final class SQLiteDatabase {
         }
 
         return statement
+    }
+
+    private func configureSQLCipher(key: SQLiteEncryptionKey) throws {
+        guard let cipherVersion = try cipherVersion(), !cipherVersion.isEmpty else {
+            throw SQLiteError.encryptionUnavailable
+        }
+
+        try execute("PRAGMA key = \"x'\(key.hexString)'\";")
+        try execute("PRAGMA cipher_page_size = 4096;")
+        try execute("PRAGMA kdf_iter = 256000;")
+        try execute("PRAGMA journal_mode = WAL;")
+
+        _ = try query("SELECT count(*) AS count FROM sqlite_master;")
     }
 
     private func bind(_ value: SQLiteValue, to index: Int32, in statement: OpaquePointer?) throws {
@@ -150,6 +180,44 @@ public enum SQLiteValue: Hashable {
     }
 }
 
+public struct SQLiteEncryptionKey: Hashable, Sendable {
+    public var data: Data
+
+    public init(data: Data) throws {
+        guard !data.isEmpty else {
+            throw SQLiteError.invalidEncryptionKey
+        }
+
+        self.data = data
+    }
+
+    public init(hexString: String) throws {
+        var bytes: [UInt8] = []
+        var buffer = ""
+
+        for character in hexString.trimmingCharacters(in: .whitespacesAndNewlines) {
+            buffer.append(character)
+            if buffer.count == 2 {
+                guard let byte = UInt8(buffer, radix: 16) else {
+                    throw SQLiteError.invalidEncryptionKey
+                }
+                bytes.append(byte)
+                buffer.removeAll(keepingCapacity: true)
+            }
+        }
+
+        guard buffer.isEmpty else {
+            throw SQLiteError.invalidEncryptionKey
+        }
+
+        try self.init(data: Data(bytes))
+    }
+
+    public var hexString: String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 public enum SQLiteError: Error, LocalizedError {
     case open(message: String)
     case prepare(message: String)
@@ -157,6 +225,8 @@ public enum SQLiteError: Error, LocalizedError {
     case step(message: String)
     case execute(message: String)
     case missingColumn(String)
+    case encryptionUnavailable
+    case invalidEncryptionKey
 
     public var errorDescription: String? {
         switch self {
@@ -164,6 +234,10 @@ public enum SQLiteError: Error, LocalizedError {
             return message
         case let .missingColumn(name):
             return "Missing SQLite column: \(name)"
+        case .encryptionUnavailable:
+            return "SQLCipher is required for secure local storage, but this SQLite runtime does not report cipher support."
+        case .invalidEncryptionKey:
+            return "The SQLite encryption key is invalid."
         }
     }
 }

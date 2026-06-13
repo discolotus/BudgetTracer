@@ -1,4 +1,5 @@
 import BudgetCore
+import BudgetSecureLocal
 import Foundation
 import SwiftUI
 
@@ -9,6 +10,22 @@ import AppKit
 public enum BudgetTracerAppWorkspaceFactory {
     @MainActor
     public static func make(environment: [String: String] = ProcessInfo.processInfo.environment) -> BudgetWorkspace {
+        if SecureLocalAppServices.usesSecureLocalMode(environment: environment) {
+            do {
+                return BudgetWorkspace(
+                    connectionState: .connecting,
+                    dataProvider: try SecureLocalAppServices.makeFinancialDataProvider(environment: environment),
+                    requiresAppLock: true
+                )
+            } catch {
+                return BudgetWorkspace(
+                    connectionState: .failed(message: error.localizedDescription),
+                    dataProvider: PlaidDataProvider(),
+                    requiresAppLock: true
+                )
+            }
+        }
+
         if usesBackend(environment: environment) {
             return BudgetWorkspace(
                 connectionState: .connecting,

@@ -136,6 +136,35 @@ final class BudgetWorkspaceTests: XCTestCase {
         XCTAssertEqual(workspace.plaidLinkState, .failed(message: "Link token expired."))
     }
 
+    func testProviderOwnedAccountOverridesDoNotWriteSensitiveAccountIDsToUserDefaults() throws {
+        let userDefaults = try makeUserDefaults()
+        let provider = ProviderOwnedOverrideDataProvider(snapshot: makeSnapshot(lastSuccessfulSyncAt: nil))
+        let workspace = BudgetWorkspace(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            connectionState: .connected(institutionCount: 1, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: userDefaults
+        )
+
+        workspace.setAccount("sensitive-account-id", kind: .checking)
+
+        XCTAssertNil(userDefaults.data(forKey: "BudgetTracer.accountOverrides.v1"))
+    }
+
+    func testAppLockControllerUnlocksWithSuccessfulAuthenticator() async {
+        let controller = BudgetAppLockController(
+            isEnabled: true,
+            authenticator: SucceedingUnlockAuthenticator()
+        )
+
+        XCTAssertTrue(controller.isLocked)
+
+        await controller.unlock()
+
+        XCTAssertFalse(controller.isLocked)
+        XCTAssertNil(controller.lastErrorMessage)
+    }
+
     func testMarkingRecurringSweepsEveryTransactionOfTheSameMerchant() {
         func market(_ id: String) -> BudgetTransaction {
             BudgetTransaction(id: id, accountID: "checking", categoryID: nil, postedAt: Date(), merchantName: "Neighborhood Market", amount: Money(minorUnits: -1_500))
@@ -222,6 +251,29 @@ private final class RecordingFinancialDataProvider: FinancialDataProvider, @unch
         sandboxInstitutionIDs.append(institutionID)
         return sandboxSnapshot ?? snapshot
     }
+}
+
+private final class ProviderOwnedOverrideDataProvider: FinancialDataProvider, @unchecked Sendable {
+    var storesAccountOverrides: Bool { true }
+
+    private var snapshot: BudgetSnapshot
+
+    init(snapshot: BudgetSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func fetchBudgetSnapshot() async throws -> BudgetSnapshot {
+        snapshot
+    }
+
+    func setAccountOverride(accountID: FinancialAccount.ID, override: AccountOverride?) async throws -> BudgetSnapshot {
+        snapshot.accountOverrides[accountID] = override
+        return snapshot
+    }
+}
+
+private struct SucceedingUnlockAuthenticator: AppUnlockAuthenticating {
+    func unlock(reason: String) async throws {}
 }
 
 private struct PlaidExchangeRequest: Equatable {
