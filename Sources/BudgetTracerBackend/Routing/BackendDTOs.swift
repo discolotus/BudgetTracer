@@ -121,6 +121,18 @@ struct UpdateRegularMonthlyRequest: Decodable {
     }
 }
 
+struct UpdateCategoryRequest: Decodable {
+    var transactionID: String
+    var categoryID: String?
+    var userID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case transactionID = "transaction_id"
+        case categoryID = "category_id"
+        case userID = "user_id"
+    }
+}
+
 struct SnapshotResponse: Encodable {
     var institutions: [InstitutionResponse]
     var accounts: [AccountResponse]

@@ -41,6 +41,8 @@ actor BackendRouter {
                 return try await webhook(request)
             case ("PATCH", "/transactions/regular-monthly"):
                 return try updateRegularMonthly(request)
+            case ("PATCH", "/transactions/category"):
+                return try updateCategory(request)
             default:
                 throw HTTPError.notFound("No route for \(request.method) \(request.path).")
             }
@@ -213,6 +215,23 @@ actor BackendRouter {
         try repository.setRegularMonthly(
             transactionID: body.transactionID,
             isRegularMonthly: body.isRegularMonthly,
+            userID: userID
+        )
+
+        return try cachedSnapshot(userID: userID)
+    }
+
+    private func updateCategory(_ request: HTTPRequest) throws -> HTTPResponse {
+        let body = try request.jsonBody(UpdateCategoryRequest.self)
+        let userID = body.userID ?? defaultUserID
+
+        guard !body.transactionID.isEmpty else {
+            throw HTTPError.badRequest("transaction_id is required.")
+        }
+
+        try repository.setCategory(
+            transactionID: body.transactionID,
+            categoryID: body.categoryID,
             userID: userID
         )
 

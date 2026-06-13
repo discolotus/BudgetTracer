@@ -208,10 +208,14 @@ public struct BudgetTracerRootView: View {
         case .normalizedMonth:
             NormalizedMonthView(
                 snapshot: workspace.displaySnapshot,
-                connectionState: workspace.connectionState
-            ) { transactionID, isRecurring in
-                workspace.setTransaction(transactionID, isRecurring: isRecurring)
-            }
+                connectionState: workspace.connectionState,
+                setRecurring: { transactionID, isRecurring in
+                    workspace.setTransaction(transactionID, isRecurring: isRecurring)
+                },
+                setCategory: { transactionID, categoryID in
+                    workspace.setCategory(transactionID, categoryID: categoryID)
+                }
+            )
         case .accounts:
             AccountsView(
                 snapshot: workspace.displaySnapshot,
@@ -227,7 +231,15 @@ public struct BudgetTracerRootView: View {
                 }
             )
         case .transactions:
-            TransactionsView(snapshot: workspace.displaySnapshot)
+            TransactionsView(
+                snapshot: workspace.displaySnapshot,
+                setRecurring: { transactionID, isRecurring in
+                    workspace.setTransaction(transactionID, isRecurring: isRecurring)
+                },
+                setCategory: { transactionID, categoryID in
+                    workspace.setCategory(transactionID, categoryID: categoryID)
+                }
+            )
         case .budgets:
             BudgetsView(snapshot: workspace.displaySnapshot)
         }

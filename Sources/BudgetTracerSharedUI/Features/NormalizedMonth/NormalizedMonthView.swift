@@ -5,8 +5,10 @@ struct NormalizedMonthView: View {
     var snapshot: BudgetSnapshot
     var connectionState: PlaidConnectionState = .connected(institutionCount: 0, lastSyncedAt: nil)
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
+    var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
 
     @State private var didApplyLaunchState = false
+    @State private var selectedTransactionID: BudgetTransaction.ID?
 
     @SceneStorage("BudgetTracer.normalizedMonth.selectedMonthTimestamp")
     private var selectedMonthTimestamp: Double = 0
@@ -205,12 +207,22 @@ struct NormalizedMonthView: View {
         cashFlowBalanceBasis == .accountBalances ? snapshot.creditDebt.absolute : Money(minorUnits: 0)
     }
 
+    private var selectedTransactionBinding: Binding<BudgetTransaction?> {
+        Binding(
+            get: {
+                guard let selectedTransactionID else { return nil }
+                return snapshot.transactions.first { $0.id == selectedTransactionID }
+            },
+            set: { newValue in selectedTransactionID = newValue?.id }
+        )
+    }
+
     private var selectableTransactions: [BudgetTransaction] {
         snapshot.transactions
             .filter { transaction in
                 transaction.amount.minorUnits != 0 && transactionDateInterval.contains(transaction.postedAt)
             }
-            .filter { TransactionSearch.matches($0, query: transactionSearchText) }
+            .filter { TransactionSearch.matches($0, query: transactionSearchText, in: snapshot) }
             .sorted { lhs, rhs in
                 if lhs.postedAt != rhs.postedAt {
                     return lhs.postedAt < rhs.postedAt
@@ -374,7 +386,8 @@ struct NormalizedMonthView: View {
                                 RecurringTransactionRow(
                                     transaction: transaction,
                                     isRecurring: snapshot.recurringTransactionIDs.contains(transaction.id),
-                                    setRecurring: setRecurring
+                                    setRecurring: setRecurring,
+                                    onOpenDetail: { selectedTransactionID = transaction.id }
                                 )
                             }
                         }
@@ -385,6 +398,16 @@ struct NormalizedMonthView: View {
             .padding()
         }
         .background(BudgetTracerStyle.canvas)
+        .sheet(item: selectedTransactionBinding) { transaction in
+            TransactionDetailSheet(
+                transaction: transaction,
+                snapshot: snapshot,
+                setRecurring: setRecurring,
+                setCategory: setCategory,
+                dismiss: { selectedTransactionID = nil }
+            )
+            .presentationDetents([.medium, .large])
+        }
         .onAppear {
             applyLaunchStateIfNeeded()
             ensureVisibleBalanceSeries()
@@ -1497,24 +1520,26 @@ private struct RecurringTransactionRow: View {
     var transaction: BudgetTransaction
     var isRecurring: Bool
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
+    var onOpenDetail: () -> Void
 
     var body: some View {
-        Toggle(isOn: binding) {
-            ViewThatFits(in: .horizontal) {
+        HStack(spacing: 12) {
+            Button(action: onOpenDetail) {
                 HStack(spacing: 12) {
                     transactionLabel
-                    Spacer()
+                    Spacer(minLength: 8)
                     transactionAmount
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    transactionLabel
-                    transactionAmount
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Toggle("Regular monthly", isOn: binding)
+                .labelsHidden()
+                .budgetTracerRecurringToggleStyle()
+                .tint(BudgetTracerStyle.accent)
+                .help("Mark as regular monthly")
         }
-        .budgetTracerRecurringToggleStyle()
-        .tint(BudgetTracerStyle.accent)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         ThemeRowDivider()
