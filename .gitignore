@@ -10,3 +10,7 @@ DerivedData/
 .codex/screenshots/
 artifacts/
 tmp/
+
+# Local Xcode/SPM artifacts
+.swiftpm/
+BudgetTracer.xcodeproj/xcuserdata/

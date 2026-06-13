@@ -119,6 +119,30 @@ public final class BudgetWorkspace: ObservableObject {
         }
     }
 
+    public func setCategory(_ transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) {
+        snapshot.transactions = snapshot.transactions.map { transaction in
+            guard transaction.id == transactionID else {
+                return transaction
+            }
+
+            var updated = transaction
+            updated.categoryID = categoryID
+            return updated
+        }
+
+        Task {
+            do {
+                snapshot = try await dataProvider.setCategory(
+                    transactionID: transactionID,
+                    categoryID: categoryID
+                )
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
     public func setAccount(_ accountID: FinancialAccount.ID, kind: AccountKind) {
         var override = accountOverrides[accountID] ?? AccountOverride()
         override.kind = kind

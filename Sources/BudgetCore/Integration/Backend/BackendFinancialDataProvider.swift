@@ -84,6 +84,28 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
         return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
     }
 
+    public func setCategory(transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) async throws -> BudgetSnapshot {
+        let url = baseURL.appendingPathComponent("transactions/category")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            UpdateCategoryRequest(
+                transactionID: transactionID,
+                categoryID: categoryID
+            )
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw BackendFinancialDataProviderError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
+    }
+
     private func postJSON<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody
@@ -168,6 +190,16 @@ private struct UpdateRegularMonthlyRequest: Encodable {
     enum CodingKeys: String, CodingKey {
         case transactionID = "transaction_id"
         case isRegularMonthly = "is_regular_monthly"
+    }
+}
+
+private struct UpdateCategoryRequest: Encodable {
+    var transactionID: String
+    var categoryID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case transactionID = "transaction_id"
+        case categoryID = "category_id"
     }
 }
 

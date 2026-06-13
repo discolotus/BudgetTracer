@@ -308,6 +308,56 @@ public final class BudgetRepository {
         )
     }
 
+    public func upsertBudgetCategory(
+        id: String,
+        userID: String,
+        name: String,
+        monthlyLimitMinorUnits: Int64? = nil,
+        currencyCode: String = "USD"
+    ) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO budget_categories(id, user_id, name, monthly_limit_minor_units, iso_currency_code, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              monthly_limit_minor_units = excluded.monthly_limit_minor_units,
+              iso_currency_code = excluded.iso_currency_code,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(id),
+                .text(userID),
+                .text(name),
+                monthlyLimitMinorUnits.map(SQLiteValue.integer) ?? .null,
+                .text(currencyCode),
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    public func setCategory(transactionID: String, categoryID: String?, userID: String) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO transaction_annotations(transaction_id, user_id, category_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              category_id = excluded.category_id,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(transactionID),
+                .text(userID),
+                categoryID.map(SQLiteValue.text) ?? .null,
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
     public func recordWebhookEvent(_ event: PlaidWebhookEventRecord) throws {
         try database.run(
             """
