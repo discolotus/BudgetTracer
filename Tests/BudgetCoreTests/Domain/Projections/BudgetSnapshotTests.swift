@@ -207,11 +207,63 @@ final class BudgetSnapshotTests: XCTestCase {
         XCTAssertEqual(points.first?.dailyNet, .dollars(100))
         XCTAssertEqual(points[8].dailyNet, .dollars(100))
         XCTAssertEqual(points[9].dailyNet, .dollars(10))
-        XCTAssertEqual(points[3].runningCashBalance, .dollars(-1910))
-        XCTAssertEqual(points[4].runningCashBalance, .dollars(1090))
-        XCTAssertEqual(points[8].runningCashBalance, .dollars(1090))
-        XCTAssertEqual(points[9].runningCashBalance, .dollars(1000))
+        // The recurring paycheck is spread evenly (+100/day) so the balance trends linearly
+        // rather than stepping up on the posting date, while the window still closes on the
+        // real account balance.
+        XCTAssertEqual(points[3].runningCashBalance, .dollars(-1510))
+        XCTAssertEqual(points[4].runningCashBalance, .dollars(-1410))
+        XCTAssertEqual(points[8].runningCashBalance, .dollars(-1010))
+        XCTAssertEqual(points[9].runningCashBalance, .dollars(-1000))
         XCTAssertEqual(points.last?.runningCashBalance, .dollars(1000))
+    }
+
+    func testRecurringFlagSpreadsBalanceLinearlyWhileNonRecurringSteps() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let month = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let rentDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+
+        func snapshot(recurring: Bool) -> BudgetSnapshot {
+            BudgetSnapshot(
+                institutions: [],
+                accounts: [
+                    FinancialAccount(
+                        id: "checking",
+                        institutionID: "bank",
+                        name: "Checking",
+                        kind: .checking,
+                        currentBalance: .dollars(0)
+                    )
+                ],
+                categories: [],
+                transactions: [
+                    BudgetTransaction(
+                        id: "rent",
+                        accountID: "checking",
+                        categoryID: nil,
+                        postedAt: rentDate,
+                        merchantName: "Rent",
+                        amount: .dollars(-3000)
+                    )
+                ],
+                recurringTransactionIDs: recurring ? ["rent"] : []
+            )
+        }
+
+        // Flagged recurring: -3000 spread over 30 days = -100/day, declining linearly to the
+        // real closing balance of 0.
+        let spread = snapshot(recurring: true).normalizedMonthlyCashFlow(containing: month, calendar: calendar)
+        XCTAssertEqual(spread.first?.runningCashBalance, .dollars(2900))
+        XCTAssertEqual(spread[14].runningCashBalance, .dollars(1500))
+        XCTAssertEqual(spread.last?.runningCashBalance, .dollars(0))
+
+        // Not flagged: the full amount lands on the posting day, so the balance steps once and
+        // is flat thereafter.
+        let stepped = snapshot(recurring: false).normalizedMonthlyCashFlow(containing: month, calendar: calendar)
+        XCTAssertEqual(stepped.first?.runningCashBalance, .dollars(0))
+        XCTAssertEqual(stepped[14].runningCashBalance, .dollars(0))
+        XCTAssertEqual(stepped.last?.runningCashBalance, .dollars(0))
     }
 
     func testNormalizedMonthlyCashFlowTracksCashAndCardMarkerDaysSeparately() throws {
@@ -769,7 +821,9 @@ final class BudgetSnapshotTests: XCTestCase {
         let transactions = snapshot.cumulativeTransactionSpending(containing: month, calendar: calendar, through: cutoff)
 
         XCTAssertEqual(cashFlow.count, 10)
-        XCTAssertEqual(cashFlow.first?.runningCashBalance, .dollars(4050))
+        // Recurring rent is spread across the 10 rendered days (-300/day), so day one already
+        // reflects a portion instead of the full opening balance.
+        XCTAssertEqual(cashFlow.first?.runningCashBalance, .dollars(3750))
         XCTAssertEqual(cashFlow.last?.runningCashBalance, .dollars(1000))
         XCTAssertEqual(spending.count, 10)
         XCTAssertEqual(spending.last?.date, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 10))))
