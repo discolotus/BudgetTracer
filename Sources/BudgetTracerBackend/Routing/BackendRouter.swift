@@ -9,6 +9,7 @@ actor BackendRouter {
     private let plaidSyncService: PlaidSyncService
     private let plaidRelayClient: PlaidAPIClientProtocol
     private let relayIdentityVerifier: RelayIdentityVerifying
+    private let routeMode: BackendRouteMode
     private let defaultUserID: String
     private let clock: @Sendable () -> Date
 
@@ -17,6 +18,7 @@ actor BackendRouter {
         plaidSyncService: PlaidSyncService,
         plaidRelayClient: PlaidAPIClientProtocol,
         relayIdentityVerifier: RelayIdentityVerifying = BearerRelayIdentityVerifier(),
+        routeMode: BackendRouteMode = .development,
         defaultUserID: String,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -24,12 +26,18 @@ actor BackendRouter {
         self.plaidSyncService = plaidSyncService
         self.plaidRelayClient = plaidRelayClient
         self.relayIdentityVerifier = relayIdentityVerifier
+        self.routeMode = routeMode
         self.defaultUserID = defaultUserID
         self.clock = clock
     }
 
     func route(_ request: HTTPRequest) async throws -> HTTPResponse {
         do {
+            if routeMode == .relayOnly,
+               !Self.isRelayOnlyRoute(method: request.method, path: request.path) {
+                throw HTTPError.notFound("No route for \(request.method) \(request.path).")
+            }
+
             switch (request.method, request.path) {
             case ("GET", "/health"):
                 return try health()
@@ -69,6 +77,14 @@ actor BackendRouter {
         } catch let error as HTTPError {
             return HTTPResponse.json(status: error.status, body: ErrorResponse(error: error.localizedDescription))
         }
+    }
+
+    private static func isRelayOnlyRoute(method: String, path: String) -> Bool {
+        if method == "GET", path == "/health" {
+            return true
+        }
+
+        return method == "POST" && path.hasPrefix("/v1/plaid/")
     }
 
     private func health() throws -> HTTPResponse {

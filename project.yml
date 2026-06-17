@@ -64,6 +64,7 @@ schemes:
     run:
       config: Debug
       environmentVariables:
+        BUDGETTRACER_DATA_MODE: demo
         BUDGETTRACER_USE_BACKEND: "0"
         BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
     archive:
@@ -75,6 +76,7 @@ schemes:
     run:
       config: Debug
       environmentVariables:
+        BUDGETTRACER_DATA_MODE: demo
         BUDGETTRACER_USE_BACKEND: "0"
         BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
     archive:

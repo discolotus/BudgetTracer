@@ -153,14 +153,7 @@ private struct OverviewHeroCard: View {
     }
 
     private var showsPlaidControls: Bool {
-        switch connectionState {
-        case .notConnected, .failed:
-            return true
-        case .connected(let institutionCount, _):
-            return institutionCount == 0
-        case .connecting:
-            return false
-        }
+        OverviewPlaidControlVisibility.showsControls(for: connectionState)
     }
 
     private var isPlaidActionInProgress: Bool {
@@ -197,6 +190,17 @@ private struct OverviewHeroCard: View {
             return BudgetTracerStyle.positive
         case .idle, .preparing, .ready, .exchanging:
             return BudgetTracerStyle.inkMuted
+        }
+    }
+}
+
+enum OverviewPlaidControlVisibility {
+    static func showsControls(for connectionState: PlaidConnectionState) -> Bool {
+        switch connectionState {
+        case .notConnected, .failed, .connected:
+            return true
+        case .connecting:
+            return false
         }
     }
 }

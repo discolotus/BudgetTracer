@@ -18,6 +18,16 @@ PLAID_SANDBOX_SECRET=...
 PLAID_REDIRECT_URI=https://your-domain.example/plaid/oauth
 ```
 
+Production relay deployments should use environment-backed credentials instead
+of local files:
+
+```bash
+export BUDGETTRACER_PLAID_CREDENTIAL_STORE=environment
+export BUDGETTRACER_PLAID_ENVIRONMENT=production
+export PLAID_CLIENT_ID=...
+export PLAID_PRODUCTION_SECRET=...
+```
+
 You can override the credential path:
 
 ```bash

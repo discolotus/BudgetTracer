@@ -33,6 +33,17 @@ public enum PlaidEnvironment: String, Hashable, Sendable {
     case development
     case production
 
+    public var secretEnvironmentKey: String {
+        switch self {
+        case .sandbox:
+            return "PLAID_SANDBOX_SECRET"
+        case .development:
+            return "PLAID_DEVELOPMENT_SECRET"
+        case .production:
+            return "PLAID_PRODUCTION_SECRET"
+        }
+    }
+
     public var baseURL: URL {
         switch self {
         case .sandbox:

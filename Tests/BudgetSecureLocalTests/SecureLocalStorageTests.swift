@@ -111,6 +111,35 @@ final class SecureLocalStorageTests: XCTestCase {
         XCTAssertThrowsError(try vault.accessToken(for: reference))
     }
 
+    func testSecureLocalModeCanBeDrivenByAppInfoDictionary() {
+        XCTAssertTrue(
+            SecureLocalAppServices.usesSecureLocalMode(
+                environment: [:],
+                infoDictionary: ["BudgetTracerDataMode": "secure-local"]
+            )
+        )
+        XCTAssertFalse(
+            SecureLocalAppServices.usesSecureLocalMode(
+                environment: ["BUDGETTRACER_DATA_MODE": "demo"],
+                infoDictionary: ["BudgetTracerDataMode": "secure-local"]
+            )
+        )
+    }
+
+    func testRelayURLCanBeDrivenByAppInfoDictionaryAndOverriddenByEnvironment() {
+        let infoURL = SecureLocalAppServices.relayURL(
+            environment: [:],
+            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://api.budgettracer.app"]
+        )
+        let environmentURL = SecureLocalAppServices.relayURL(
+            environment: ["BUDGETTRACER_PLAID_RELAY_URL": "https://relay.example.com"],
+            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://api.budgettracer.app"]
+        )
+
+        XCTAssertEqual(infoURL.absoluteString, "https://api.budgettracer.app")
+        XCTAssertEqual(environmentURL.absoluteString, "https://relay.example.com")
+    }
+
     @MainActor
     func testPlaidRelayRejectsInsecureNonLocalhostURL() {
         XCTAssertThrowsError(

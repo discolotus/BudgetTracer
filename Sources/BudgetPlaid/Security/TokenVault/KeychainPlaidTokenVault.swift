@@ -44,27 +44,40 @@ public final class KeychainPlaidTokenVault: PlaidTokenVault {
 
 public enum PlaidCredentialKeychain {
     public static let sandboxServiceName = "com.budgettracer.plaid.sandbox"
+    public static let defaultServiceName = "com.budgettracer.plaid.credentials"
     private static let lock = NSLock()
     private nonisolated(unsafe) static var cachedSandboxConfiguration: PlaidConfiguration?
 
     public static func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
+        try configuration(plaidEnvironment: .sandbox, webhookURL: webhookURL, redirectURI: redirectURI)
+    }
+
+    public static func configuration(
+        plaidEnvironment: PlaidEnvironment,
+        serviceName: String? = nil,
+        webhookURL: URL? = nil,
+        redirectURI: URL? = nil
+    ) throws -> PlaidConfiguration {
         lock.lock()
         defer { lock.unlock() }
 
-        if var cachedSandboxConfiguration {
+        if plaidEnvironment == .sandbox, var cachedSandboxConfiguration {
             cachedSandboxConfiguration.webhookURL = webhookURL
             cachedSandboxConfiguration.redirectURI = redirectURI
             return cachedSandboxConfiguration
         }
 
+        let serviceName = serviceName ?? (plaidEnvironment == .sandbox ? sandboxServiceName : defaultServiceName)
         let configuration = try PlaidConfiguration(
-            clientID: KeychainStore.password(serviceName: sandboxServiceName, accountName: "PLAID_CLIENT_ID"),
-            secret: KeychainStore.password(serviceName: sandboxServiceName, accountName: "PLAID_SANDBOX_SECRET"),
-            environment: .sandbox,
+            clientID: KeychainStore.password(serviceName: serviceName, accountName: "PLAID_CLIENT_ID"),
+            secret: KeychainStore.password(serviceName: serviceName, accountName: plaidEnvironment.secretEnvironmentKey),
+            environment: plaidEnvironment,
             webhookURL: webhookURL,
             redirectURI: redirectURI
         )
-        cachedSandboxConfiguration = configuration
+        if plaidEnvironment == .sandbox {
+            cachedSandboxConfiguration = configuration
+        }
         return configuration
     }
 }
@@ -139,8 +152,18 @@ public final class KeychainPlaidTokenVault: PlaidTokenVault {
 
 public enum PlaidCredentialKeychain {
     public static let sandboxServiceName = "com.budgettracer.plaid.sandbox"
+    public static let defaultServiceName = "com.budgettracer.plaid.credentials"
 
     public static func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
+        throw KeychainError.unsupportedPlatform
+    }
+
+    public static func configuration(
+        plaidEnvironment: PlaidEnvironment,
+        serviceName: String? = nil,
+        webhookURL: URL? = nil,
+        redirectURI: URL? = nil
+    ) throws -> PlaidConfiguration {
         throw KeychainError.unsupportedPlatform
     }
 }

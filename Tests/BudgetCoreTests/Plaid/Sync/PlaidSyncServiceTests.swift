@@ -435,6 +435,45 @@ final class PlaidSyncServiceTests: XCTestCase {
         XCTAssertEqual(configuration.webhookURL?.absoluteString, "https://example.com/webhook")
         XCTAssertEqual(configuration.redirectURI?.absoluteString, "https://example.com/plaid/oauth")
     }
+
+    func testLocalSecretsFileBuildsProductionConfiguration() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("PlaidSecrets.production").path
+        try """
+        PLAID_CLIENT_ID=production-client
+        PLAID_PRODUCTION_SECRET=production-secret
+        PLAID_REDIRECT_URI=https://app.budgettracer.com/plaid/oauth
+        PLAID_TRANSACTIONS_DAYS_REQUESTED=365
+        """.write(toFile: path, atomically: true, encoding: .utf8)
+
+        let configuration = try PlaidLocalSecretsFile(path: path)
+            .configuration(plaidEnvironment: .production)
+
+        XCTAssertEqual(configuration.clientID, "production-client")
+        XCTAssertEqual(configuration.secret, "production-secret")
+        XCTAssertEqual(configuration.environment, .production)
+        XCTAssertEqual(configuration.redirectURI?.absoluteString, "https://app.budgettracer.com/plaid/oauth")
+        XCTAssertEqual(configuration.daysRequested, 365)
+    }
+
+    func testEnvironmentVariablesBuildProductionConfiguration() throws {
+        let configuration = try PlaidEnvironmentVariables(values: [
+            "PLAID_CLIENT_ID": "production-client",
+            "PLAID_PRODUCTION_SECRET": "production-secret",
+            "PLAID_REDIRECT_URI": "https://app.budgettracer.com/plaid/oauth"
+        ]).configuration(
+            plaidEnvironment: .production,
+            webhookURL: URL(string: "https://api.budgettracer.app/plaid/webhook")
+        )
+
+        XCTAssertEqual(configuration.clientID, "production-client")
+        XCTAssertEqual(configuration.secret, "production-secret")
+        XCTAssertEqual(configuration.environment, .production)
+        XCTAssertEqual(configuration.webhookURL?.absoluteString, "https://api.budgettracer.app/plaid/webhook")
+        XCTAssertEqual(configuration.redirectURI?.absoluteString, "https://app.budgettracer.com/plaid/oauth")
+    }
 }
 
 private final class FakePlaidClient: PlaidAPIClientProtocol {

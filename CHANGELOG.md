@@ -10,6 +10,9 @@ All notable changes to BudgetTracer are documented here.
 - Stateless authenticated Plaid relay endpoints for Link token creation, public token exchange, accounts, transaction sync, and item removal.
 - Sign in with Apple relay authentication support, App Store entitlements, and an ADR documenting the one-local-user secure storage model.
 - Delete Local Data flow that removes the encrypted ledger, Keychain secrets, cached state, and attempts Plaid item removal.
+- Production Plaid relay configuration for environment-backed credentials, relay-only route exposure, production app defaults, and backend deployment guidance.
+- Cloudflare Worker Plaid relay scaffold with workers.dev development deployment and owned-domain production routes.
+- GitHub Actions deployment wiring for Cloudflare Worker dev and production environments.
 
 ### Changed
 

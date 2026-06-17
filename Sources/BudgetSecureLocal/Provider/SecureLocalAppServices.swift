@@ -4,7 +4,8 @@ import Foundation
 public enum SecureLocalAppServices {
     @MainActor
     public static func makeFinancialDataProvider(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
     ) throws -> SecureLocalFinancialDataProvider {
         let secretStore = KeychainSecureSecretStore()
         let tokenVault = SecurePlaidTokenVault(secretStore: secretStore)
@@ -13,7 +14,7 @@ public enum SecureLocalAppServices {
             secretStore: secretStore
         )
         let relayClient = try PlaidRelayClient(
-            baseURL: relayURL(environment: environment),
+            baseURL: relayURL(environment: environment, infoDictionary: infoDictionary),
             identityTokenProvider: identityProvider(environment: environment),
             securityPolicy: relaySecurityPolicy(environment: environment)
         )
@@ -25,9 +26,19 @@ public enum SecureLocalAppServices {
         )
     }
 
-    public static func usesSecureLocalMode(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        environment["BUDGETTRACER_DATA_MODE"] == "secure-local"
-            || environment["BUDGETTRACER_SECURE_LOCAL"] == "1"
+    public static func usesSecureLocalMode(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) -> Bool {
+        if let dataMode = nonEmpty(environment["BUDGETTRACER_DATA_MODE"]) {
+            return dataMode.lowercased() == "secure-local"
+        }
+
+        if let secureLocal = nonEmpty(environment["BUDGETTRACER_SECURE_LOCAL"]) {
+            return ["1", "true", "yes"].contains(secureLocal.lowercased())
+        }
+
+        return nonEmpty(infoDictionary?["BudgetTracerDataMode"] as? String)?.lowercased() == "secure-local"
     }
 
     private static func storeConfiguration(environment: [String: String]) throws -> SecureLocalStoreConfiguration {
@@ -43,8 +54,12 @@ public enum SecureLocalAppServices {
         )
     }
 
-    private static func relayURL(environment: [String: String]) -> URL {
-        environment["BUDGETTRACER_PLAID_RELAY_URL"].flatMap(URL.init(string:))
+    static func relayURL(
+        environment: [String: String],
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) -> URL {
+        nonEmpty(environment["BUDGETTRACER_PLAID_RELAY_URL"]).flatMap(URL.init(string:))
+            ?? nonEmpty(infoDictionary?["BudgetTracerPlaidRelayURL"] as? String).flatMap(URL.init(string:))
             ?? URL(string: "https://api.budgettracer.app")!
     }
 
@@ -65,5 +80,10 @@ public enum SecureLocalAppServices {
         #else
         return StaticAppleIdentityTokenProvider(token: "")
         #endif
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 }

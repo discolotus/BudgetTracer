@@ -8,6 +8,11 @@ struct BudgetTracerBackendApp {
 
     static func main() async throws {
         let configuration = try BackendConfiguration.load()
+        if configuration.routeMode == .relayOnly,
+           (configuration.appleIdentityAudience ?? "").isEmpty {
+            throw BackendConfigurationError.missingAppleIdentityAudience
+        }
+
         let database = try SQLiteDatabase(path: configuration.databasePath)
         let repository = BudgetRepository(database: database)
         try repository.migrate()
@@ -20,12 +25,20 @@ struct BudgetTracerBackendApp {
                     throw BackendConfigurationError.missingPlaidSecretsPath
                 }
                 return try PlaidLocalSecretsFile(path: path)
-                    .sandboxConfiguration(
+                    .configuration(
+                        plaidEnvironment: configuration.plaidEnvironment,
                         webhookURL: configuration.webhookURL,
                         redirectURI: configuration.redirectURI
                     )
+            case .environment:
+                return try PlaidEnvironmentVariables().configuration(
+                    plaidEnvironment: configuration.plaidEnvironment,
+                    webhookURL: configuration.webhookURL,
+                    redirectURI: configuration.redirectURI
+                )
             case .keychain:
-                return try PlaidCredentialKeychain.sandboxConfiguration(
+                return try PlaidCredentialKeychain.configuration(
+                    plaidEnvironment: configuration.plaidEnvironment,
                     webhookURL: configuration.webhookURL,
                     redirectURI: configuration.redirectURI
                 )
@@ -53,15 +66,18 @@ struct BudgetTracerBackendApp {
             plaidSyncService: plaidSyncService,
             plaidRelayClient: plaidClient,
             relayIdentityVerifier: relayIdentityVerifier,
+            routeMode: configuration.routeMode,
             defaultUserID: configuration.defaultUserID
         )
-        let server = LocalHTTPServer(port: configuration.port) { request in
+        let server = LocalHTTPServer(host: configuration.bindHost, port: configuration.port) { request in
             try await router.route(request)
         }
         retainedServer = server
 
         try server.start()
-        print("BudgetTracerBackend listening on http://127.0.0.1:\(configuration.port)")
+        print("BudgetTracerBackend listening on http://\(configuration.bindHost):\(configuration.port)")
+        print("Route mode: \(configuration.routeMode.description)")
+        print("Plaid environment: \(configuration.plaidEnvironment.rawValue)")
         print("Database: \(configuration.databasePath)")
 
         while !Task.isCancelled {
@@ -72,11 +88,14 @@ struct BudgetTracerBackendApp {
 
 enum BackendConfigurationError: Error, LocalizedError {
     case missingPlaidSecretsPath
+    case missingAppleIdentityAudience
 
     var errorDescription: String? {
         switch self {
         case .missingPlaidSecretsPath:
             return "BUDGETTRACER_PLAID_SECRETS_PATH is required when BUDGETTRACER_PLAID_CREDENTIAL_STORE=file."
+        case .missingAppleIdentityAudience:
+            return "BUDGETTRACER_APPLE_AUDIENCE is required when BUDGETTRACER_BACKEND_ROUTE_MODE=relay-only."
         }
     }
 }

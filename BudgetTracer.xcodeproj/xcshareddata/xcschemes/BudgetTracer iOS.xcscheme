@@ -65,6 +65,11 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "BUDGETTRACER_DATA_MODE"
+            value = "demo"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "BUDGETTRACER_BACKEND_URL"
             value = "http://127.0.0.1:8790"
             isEnabled = "YES">

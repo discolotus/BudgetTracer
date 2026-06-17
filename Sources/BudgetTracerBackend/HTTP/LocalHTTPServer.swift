@@ -4,12 +4,14 @@ import Foundation
 final class LocalHTTPServer {
     typealias Handler = @Sendable (HTTPRequest) async throws -> HTTPResponse
 
+    private let host: String
     private let port: UInt16
     private let handler: Handler
     private let queue = DispatchQueue(label: "BudgetTracerBackend.Socket")
     private var serverSocket: Int32 = -1
 
-    init(port: UInt16, handler: @escaping Handler) {
+    init(host: String = "127.0.0.1", port: UInt16, handler: @escaping Handler) {
+        self.host = host
         self.port = port
         self.handler = handler
     }
@@ -35,7 +37,9 @@ final class LocalHTTPServer {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else {
+            throw HTTPServerError.invalidBindAddress(host)
+        }
 
         let bindResult = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
@@ -258,6 +262,7 @@ enum HTTPError: Error, LocalizedError {
 }
 
 enum HTTPServerError: Error, LocalizedError {
+    case invalidBindAddress(String)
     case socket(Int32)
     case setsockopt(Int32)
     case bind(Int32)
@@ -265,6 +270,8 @@ enum HTTPServerError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case let .invalidBindAddress(host):
+            return "Invalid bind address \(host). Use an IPv4 address such as 127.0.0.1 or 0.0.0.0."
         case let .socket(code):
             return "socket failed with errno \(code)."
         case let .setsockopt(code):

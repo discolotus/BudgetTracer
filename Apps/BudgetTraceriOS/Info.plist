@@ -18,6 +18,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>BudgetTracerDataMode</key>
+	<string>secure-local</string>
+	<key>BudgetTracerPlaidRelayURL</key>
+	<string>https://api.budgettracer.app</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

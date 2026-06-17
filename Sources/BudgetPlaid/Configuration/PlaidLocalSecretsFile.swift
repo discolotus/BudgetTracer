@@ -8,22 +8,31 @@ public struct PlaidLocalSecretsFile {
     }
 
     public func sandboxConfiguration(webhookURL: URL? = nil, redirectURI: URL? = nil) throws -> PlaidConfiguration {
+        try configuration(plaidEnvironment: .sandbox, webhookURL: webhookURL, redirectURI: redirectURI)
+    }
+
+    public func configuration(
+        plaidEnvironment: PlaidEnvironment,
+        webhookURL: URL? = nil,
+        redirectURI: URL? = nil
+    ) throws -> PlaidConfiguration {
         let values = try readValues()
         guard let clientID = values["PLAID_CLIENT_ID"], !clientID.isEmpty else {
             throw PlaidLocalSecretsFileError.missingKey("PLAID_CLIENT_ID")
         }
 
-        let secret = values["PLAID_SANDBOX_SECRET"] ?? values["PLAID_SECRET"]
+        let secret = values[plaidEnvironment.secretEnvironmentKey] ?? values["PLAID_SECRET"]
         guard let secret, !secret.isEmpty else {
-            throw PlaidLocalSecretsFileError.missingKey("PLAID_SANDBOX_SECRET")
+            throw PlaidLocalSecretsFileError.missingKey(plaidEnvironment.secretEnvironmentKey)
         }
 
         return PlaidConfiguration(
             clientID: clientID,
             secret: secret,
-            environment: .sandbox,
+            environment: plaidEnvironment,
             webhookURL: webhookURL,
-            redirectURI: redirectURI ?? values["PLAID_REDIRECT_URI"].flatMap(URL.init(string:))
+            redirectURI: redirectURI ?? values["PLAID_REDIRECT_URI"].flatMap(URL.init(string:)),
+            daysRequested: values["PLAID_TRANSACTIONS_DAYS_REQUESTED"].flatMap(Int.init) ?? 730
         )
     }
 

@@ -1,0 +1,51 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "budgettracer-plaid-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-17",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "dev": {
+      "name": "budgettracer-plaid-relay-dev",
+      "workers_dev": true,
+      "vars": {
+        "PLAID_ENVIRONMENT": "sandbox",
+        "PLAID_CLIENT_NAME": "BudgetTracer Dev",
+        "PLAID_PRODUCTS": "transactions",
+        "PLAID_COUNTRY_CODES": "US",
+        "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
+        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac"
+      }
+    },
+    "production": {
+      "name": "budgettracer-plaid-relay",
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "api.budgettracer.app",
+          "custom_domain": true
+        },
+        {
+          "pattern": "app.budgettracer.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "PLAID_ENVIRONMENT": "production",
+        "PLAID_CLIENT_NAME": "BudgetTracer",
+        "PLAID_PRODUCTS": "transactions",
+        "PLAID_COUNTRY_CODES": "US",
+        "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
+        "PLAID_REDIRECT_URI": "https://app.budgettracer.com/plaid/oauth",
+        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac",
+        "API_HOSTS": "api.budgettracer.app",
+        "LINK_HOSTS": "app.budgettracer.com"
+      }
+    }
+  }
+}

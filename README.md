@@ -112,6 +112,8 @@ Publishing is not automated yet. A release pipeline still needs signing assets, 
 - [Changelog](CHANGELOG.md)
 - [Xcode app targets](docs/xcode-app-targets.md)
 - [Local Plaid secrets](docs/local-plaid-secrets.md)
+- [Backend deployment](docs/backend-deployment.md)
+- [Cloudflare Worker Plaid relay](docs/cloudflare-worker.md)
 - [ADR 0001: Shared SwiftUI Apple Platform Architecture](docs/adr/0001-shared-swiftui-apple-platform-architecture.md)
 - [ADR 0002: Plaid Sync and Financial Database](docs/adr/0002-plaid-sync-and-financial-database.md)
 - [ADR 0003: Secure Local App Store Storage](docs/adr/0003-secure-local-app-store-storage.md)

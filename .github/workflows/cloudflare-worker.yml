@@ -1,0 +1,108 @@
+name: Cloudflare Worker
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cloudflare-worker.yml"
+      - "workers/plaid-relay/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cloudflare-worker.yml"
+      - "workers/plaid-relay/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Worker environment to deploy"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/plaid-relay
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check Worker syntax
+        run: node --check src/index.js
+
+      - name: Run Worker tests
+        run: npm test
+
+  deploy-dev:
+    name: Deploy Dev Worker
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'dev'
+    environment:
+      name: cloudflare-dev
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Deploy dev Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/plaid-relay
+          wranglerVersion: "4"
+          command: deploy --env dev
+          environment: dev
+          secrets: |
+            PLAID_CLIENT_ID
+            PLAID_SANDBOX_SECRET
+            DEV_BEARER_TOKEN
+        env:
+          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+          PLAID_SANDBOX_SECRET: ${{ secrets.PLAID_SANDBOX_SECRET }}
+          DEV_BEARER_TOKEN: ${{ secrets.DEV_BEARER_TOKEN }}
+
+  deploy-production:
+    name: Deploy Production Worker
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'production' && github.ref == 'refs/heads/main'
+    environment:
+      name: cloudflare-production
+      url: https://api.budgettracer.app
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Deploy production Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/plaid-relay
+          wranglerVersion: "4"
+          command: deploy --env production
+          environment: production
+          secrets: |
+            PLAID_CLIENT_ID
+            PLAID_PRODUCTION_SECRET
+        env:
+          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+          PLAID_PRODUCTION_SECRET: ${{ secrets.PLAID_PRODUCTION_SECRET }}
