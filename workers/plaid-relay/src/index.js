@@ -61,11 +61,27 @@ export async function handleRequest(request, env) {
     return jsonResponse({ error: "Method not allowed." }, 405);
   }
 
+  const preAuthRateLimit = await enforceRateLimit(
+    env.PLAID_RELAY_PREAUTH_RATE_LIMITER,
+    rateLimitKey(env, "preauth", clientIPAddress(request), url.pathname)
+  );
+  if (preAuthRateLimit) {
+    return preAuthRateLimit;
+  }
+
   let subject;
   try {
     subject = await verifyAuthorization(request, env);
   } catch (error) {
     return jsonResponse({ error: error.message }, 401);
+  }
+
+  const authRateLimit = await enforceRateLimit(
+    env.PLAID_RELAY_AUTH_RATE_LIMITER,
+    rateLimitKey(env, "auth", subject, url.pathname)
+  );
+  if (authRateLimit) {
+    return authRateLimit;
   }
 
   try {
@@ -199,7 +215,7 @@ async function verifyAuthorization(request, env) {
   const header = JSON.parse(base64URLToText(jwt.header));
   const claims = JSON.parse(base64URLToText(jwt.payload));
 
-  validateAppleClaims(claims, required(env, "APPLE_AUDIENCE"));
+  validateAppleClaims(claims, requiredAppleAudiences(env));
 
   if (header.alg !== "RS256" || !header.kid) {
     throw new Error("The Sign in with Apple token header is invalid.");
@@ -248,14 +264,22 @@ async function applePublicKey(kid) {
   );
 }
 
-function validateAppleClaims(claims, audience) {
+function requiredAppleAudiences(env) {
+  const audiences = splitList(env.APPLE_AUDIENCES || env.APPLE_AUDIENCE);
+  if (!audiences.length) {
+    required(env, "APPLE_AUDIENCES");
+  }
+  return audiences;
+}
+
+function validateAppleClaims(claims, expectedAudiences) {
   const now = Math.floor(Date.now() / 1000);
   if (claims.iss !== "https://appleid.apple.com") {
     throw new Error("The Sign in with Apple token issuer is invalid.");
   }
 
-  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!audiences.includes(audience)) {
+  const tokenAudiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (!tokenAudiences.some((audience) => expectedAudiences.includes(audience))) {
     throw new Error("The Sign in with Apple token audience is invalid.");
   }
 
@@ -344,6 +368,36 @@ function hostAllowed(host, configuredHosts) {
   const hosts = splitList(configuredHosts).map((item) => item.toLowerCase());
   return hosts.length === 0 || hosts.includes(host);
 }
+
+async function enforceRateLimit(rateLimiter, key) {
+  if (!rateLimiter) {
+    return null;
+  }
+
+  const { success } = await rateLimiter.limit({ key });
+  return success ? null : jsonResponse(
+    { error: "Too many Plaid relay requests. Try again shortly." },
+    429,
+    { "Retry-After": "60" }
+  );
+}
+
+function rateLimitKey(env, phase, actor, pathname) {
+  const scope = env.RATE_LIMIT_SCOPE || plaidEnvironment(env);
+  return [scope, phase, actor, pathname].join(":");
+}
+
+function clientIPAddress(request) {
+  return request.headers.get("CF-Connecting-IP") || "unknown-client";
+}
+
+export const testInternals = {
+  clientIPAddress,
+  enforceRateLimit,
+  rateLimitKey,
+  requiredAppleAudiences,
+  validateAppleClaims
+};
 
 function base64URLToBytes(value) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");

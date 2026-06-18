@@ -30,6 +30,22 @@ certificate for that hostname. `production-owned` also sets `API_HOSTS` and
 `LINK_HOSTS` so `/v1/plaid/*` only answers on `api.budgettracer.app`, while
 Universal Link/OAuth paths only answer on `app.budgettracer.com`.
 
+Worker Preview URLs are explicitly disabled in `wrangler.jsonc`. The relay only
+needs the stable dev, production `workers.dev`, and future owned-domain URLs;
+versioned or aliased preview URLs would create extra public entry points for the
+same financial API surface.
+
+The Plaid relay also uses Cloudflare Workers Rate Limiting bindings:
+
+- `PLAID_RELAY_PREAUTH_RATE_LIMITER`: `300` requests per minute per
+  `CF-Connecting-IP` and Plaid route. This is a coarse guard for unauthenticated
+  or invalid-token traffic before Apple token verification finishes.
+- `PLAID_RELAY_AUTH_RATE_LIMITER`: `120` requests per minute per authenticated
+  Apple subject and Plaid route. This is the main application-level limit.
+
+The rate-limit counters are configured in `wrangler.jsonc`; they are not secrets
+and do not require any GitHub or Cloudflare environment variables.
+
 ## Repo Layout
 
 ```text
@@ -236,7 +252,9 @@ curl https://app.budgettracer.com/.well-known/apple-app-site-association
 
 All `/v1/plaid/*` endpoints require an `Authorization: Bearer <token>` header.
 Production verifies Sign in with Apple identity tokens against Apple's public
-keys and `APPLE_AUDIENCE`.
+keys and the configured `APPLE_AUDIENCES` list. Configure both bundle IDs when
+macOS and iOS use the same relay, for example
+`com.budgettracer.ios,com.budgettracer.mac`.
 
 In non-production only, `DEV_BEARER_TOKEN` can be used as a fixed bearer token
 for curl and local integration testing.

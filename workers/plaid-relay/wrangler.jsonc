@@ -4,6 +4,7 @@
   "main": "src/index.js",
   "compatibility_date": "2026-06-17",
   "workers_dev": true,
+  "preview_urls": false,
   "observability": {
     "enabled": true
   },
@@ -11,33 +12,89 @@
     "dev": {
       "name": "budgettracer-plaid-relay-dev",
       "workers_dev": true,
+      "ratelimits": [
+        {
+          "name": "PLAID_RELAY_PREAUTH_RATE_LIMITER",
+          "namespace_id": "2701",
+          "simple": {
+            "limit": 300,
+            "period": 60
+          }
+        },
+        {
+          "name": "PLAID_RELAY_AUTH_RATE_LIMITER",
+          "namespace_id": "2702",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
+        }
+      ],
       "vars": {
+        "RATE_LIMIT_SCOPE": "dev",
         "PLAID_ENVIRONMENT": "sandbox",
         "PLAID_CLIENT_NAME": "BudgetTracer Dev",
         "PLAID_PRODUCTS": "transactions",
         "PLAID_COUNTRY_CODES": "US",
         "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
-        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_AUDIENCES": "com.budgettracer.ios,com.budgettracer.mac",
         "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac"
       }
     },
     "production": {
       "name": "budgettracer-plaid-relay",
       "workers_dev": true,
+      "ratelimits": [
+        {
+          "name": "PLAID_RELAY_PREAUTH_RATE_LIMITER",
+          "namespace_id": "2711",
+          "simple": {
+            "limit": 300,
+            "period": 60
+          }
+        },
+        {
+          "name": "PLAID_RELAY_AUTH_RATE_LIMITER",
+          "namespace_id": "2712",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
+        }
+      ],
       "vars": {
+        "RATE_LIMIT_SCOPE": "production",
         "PLAID_ENVIRONMENT": "production",
         "PLAID_CLIENT_NAME": "BudgetTracer",
         "PLAID_PRODUCTS": "transactions",
         "PLAID_COUNTRY_CODES": "US",
         "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
         "PLAID_REDIRECT_URI": "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev/plaid/oauth",
-        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_AUDIENCES": "com.budgettracer.ios,com.budgettracer.mac",
         "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac"
       }
     },
     "production-owned": {
       "name": "budgettracer-plaid-relay",
       "workers_dev": false,
+      "ratelimits": [
+        {
+          "name": "PLAID_RELAY_PREAUTH_RATE_LIMITER",
+          "namespace_id": "2721",
+          "simple": {
+            "limit": 300,
+            "period": 60
+          }
+        },
+        {
+          "name": "PLAID_RELAY_AUTH_RATE_LIMITER",
+          "namespace_id": "2722",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
+        }
+      ],
       "routes": [
         {
           "pattern": "api.budgettracer.app",
@@ -49,13 +106,14 @@
         }
       ],
       "vars": {
+        "RATE_LIMIT_SCOPE": "production-owned",
         "PLAID_ENVIRONMENT": "production",
         "PLAID_CLIENT_NAME": "BudgetTracer",
         "PLAID_PRODUCTS": "transactions",
         "PLAID_COUNTRY_CODES": "US",
         "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
         "PLAID_REDIRECT_URI": "https://app.budgettracer.com/plaid/oauth",
-        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_AUDIENCES": "com.budgettracer.ios,com.budgettracer.mac",
         "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac",
         "API_HOSTS": "api.budgettracer.app",
         "LINK_HOSTS": "app.budgettracer.com"
