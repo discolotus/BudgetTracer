@@ -143,14 +143,14 @@ final class SecureLocalStorageTests: XCTestCase {
     func testRelayURLCanBeDrivenByAppInfoDictionaryAndOverriddenByEnvironment() {
         let infoURL = SecureLocalAppServices.relayURL(
             environment: [:],
-            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://api.budgettracer.app"]
+            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev"]
         )
         let environmentURL = SecureLocalAppServices.relayURL(
             environment: ["BUDGETTRACER_PLAID_RELAY_URL": "https://relay.example.com"],
-            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://api.budgettracer.app"]
+            infoDictionary: ["BudgetTracerPlaidRelayURL": "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev"]
         )
 
-        XCTAssertEqual(infoURL.absoluteString, "https://api.budgettracer.app")
+        XCTAssertEqual(infoURL.absoluteString, "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev")
         XCTAssertEqual(environmentURL.absoluteString, "https://relay.example.com")
     }
 

@@ -8,6 +8,7 @@
 	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
+		<string>applinks:budgettracer-plaid-relay.tanner-m-leo.workers.dev</string>
 		<string>applinks:app.budgettracer.com</string>
 	</array>
 	<key>keychain-access-groups</key>

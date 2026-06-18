@@ -6,6 +6,7 @@
     "dev": "wrangler dev --env dev --local",
     "deploy:dev": "wrangler deploy --env dev",
     "deploy:production": "wrangler deploy --env production",
+    "deploy:production-owned": "wrangler deploy --env production-owned",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {

@@ -23,6 +23,20 @@
     },
     "production": {
       "name": "budgettracer-plaid-relay",
+      "workers_dev": true,
+      "vars": {
+        "PLAID_ENVIRONMENT": "production",
+        "PLAID_CLIENT_NAME": "BudgetTracer",
+        "PLAID_PRODUCTS": "transactions",
+        "PLAID_COUNTRY_CODES": "US",
+        "PLAID_TRANSACTIONS_DAYS_REQUESTED": "730",
+        "PLAID_REDIRECT_URI": "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev/plaid/oauth",
+        "APPLE_AUDIENCE": "com.budgettracer.ios",
+        "APPLE_APP_SITE_ASSOCIATION_APP_IDS": "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac"
+      }
+    },
+    "production-owned": {
+      "name": "budgettracer-plaid-relay",
       "workers_dev": false,
       "routes": [
         {

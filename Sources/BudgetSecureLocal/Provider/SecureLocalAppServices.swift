@@ -80,7 +80,7 @@ public enum SecureLocalAppServices {
     ) -> URL {
         nonEmpty(environment["BUDGETTRACER_PLAID_RELAY_URL"]).flatMap(URL.init(string:))
             ?? nonEmpty(infoDictionary?["BudgetTracerPlaidRelayURL"] as? String).flatMap(URL.init(string:))
-            ?? URL(string: "https://api.budgettracer.app")!
+            ?? URL(string: "https://budgettracer-plaid-relay.tanner-m-leo.workers.dev")!
     }
 
     private static func relaySecurityPolicy(environment: [String: String]) -> PlaidRelaySecurityPolicy {

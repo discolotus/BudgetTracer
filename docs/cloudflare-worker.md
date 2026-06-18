@@ -12,18 +12,21 @@ Development path:
 https://budgettracer-plaid-relay-dev.<your-cloudflare-subdomain>.workers.dev
 ```
 
-Owned-domain production path:
+Production paths:
 
 ```text
+https://budgettracer-plaid-relay.<your-cloudflare-subdomain>.workers.dev
 https://api.budgettracer.app
 https://app.budgettracer.com/.well-known/apple-app-site-association
 https://app.budgettracer.com/plaid/oauth
 ```
 
-The committed Worker config uses `workers.dev` for the `dev` environment and
-Cloudflare Custom Domains for production. Cloudflare Custom Domains attach a
-Worker to a hostname in an active Cloudflare zone and Cloudflare manages the DNS
-record and certificate for that hostname. Production also sets `API_HOSTS` and
+The committed Worker config uses `workers.dev` for `dev` and the default
+`production` environment. This is the free production path and does not require a
+domain. The `production-owned` environment is ready for Cloudflare Custom
+Domains after an owned domain is available. Custom Domains attach a Worker to a
+hostname in an active Cloudflare zone and Cloudflare manages the DNS record and
+certificate for that hostname. `production-owned` also sets `API_HOSTS` and
 `LINK_HOSTS` so `/v1/plaid/*` only answers on `api.budgettracer.app`, while
 Universal Link/OAuth paths only answer on `app.budgettracer.com`.
 
@@ -53,15 +56,16 @@ in GitHub secrets as `CLOUDFLARE_API_TOKEN`; also store the account ID as
 `CLOUDFLARE_ACCOUNT_ID`. Keep both values in GitHub environment secrets, not in
 the repo.
 
-The workflow uses two GitHub environments:
+The workflow uses three GitHub environments:
 
 ```text
 cloudflare-dev
 cloudflare-production
+cloudflare-production-owned
 ```
 
-Use GitHub environment protection rules on `cloudflare-production` if production
-deploys should require approval.
+Use GitHub environment protection rules on `cloudflare-production` and
+`cloudflare-production-owned` if production deploys should require approval.
 
 ## Initial Setup
 
@@ -133,16 +137,17 @@ BUDGETTRACER_PLAID_RELAY_URL=https://budgettracer-plaid-relay-dev.<your-cloudfla
 BUDGETTRACER_APPLE_IDENTITY_TOKEN=<real-or-dev-token>
 ```
 
-## Deploy Owned-Domain Production Worker
+## Deploy Free Production Worker
 
 Before production deploy:
 
-- Add the owned zones to Cloudflare.
 - Replace `TEAMID.com.budgettracer.ios` and `TEAMID.com.budgettracer.mac` in
   `wrangler.jsonc` with real Apple Team ID app IDs.
-- Confirm the route domains in `wrangler.jsonc` match the domains you own.
-- Register `https://app.budgettracer.com/plaid/oauth` in the Plaid Dashboard.
-- Confirm the app entitlements include the matching `applinks:` domain.
+- Register
+  `https://budgettracer-plaid-relay.<your-cloudflare-subdomain>.workers.dev/plaid/oauth`
+  in the Plaid Dashboard.
+- Confirm the app entitlements include the matching `applinks:` domain if Plaid
+  OAuth is required.
 
 Set production secrets in CI or from a local shell.
 
@@ -170,6 +175,45 @@ Deploy:
 
 ```bash
 npm run deploy:production
+```
+
+Smoke check:
+
+```bash
+curl https://budgettracer-plaid-relay.<your-cloudflare-subdomain>.workers.dev/health
+curl https://budgettracer-plaid-relay.<your-cloudflare-subdomain>.workers.dev/.well-known/apple-app-site-association
+```
+
+## Deploy Owned-Domain Production Worker
+
+Use this path after buying or attaching a domain to Cloudflare.
+
+Before owned-domain production deploy:
+
+- Add the owned zones to Cloudflare.
+- Replace `TEAMID.com.budgettracer.ios` and `TEAMID.com.budgettracer.mac` in
+  `wrangler.jsonc` with real Apple Team ID app IDs.
+- Confirm the route domains in `wrangler.jsonc` match the domains you own.
+- Register `https://app.budgettracer.com/plaid/oauth` in the Plaid Dashboard.
+- Confirm the app entitlements include the matching `applinks:` domain.
+
+Use the same production CI secrets, but add them to the
+`cloudflare-production-owned` GitHub environment. The workflow deploys the
+owned-domain Worker only when manually run with `environment=production-owned`
+from the `main` branch.
+
+For a local deploy, set the same Worker secrets in Cloudflare:
+
+```bash
+cd workers/plaid-relay
+npx wrangler secret put PLAID_CLIENT_ID --env production-owned
+npx wrangler secret put PLAID_PRODUCTION_SECRET --env production-owned
+```
+
+Deploy:
+
+```bash
+npm run deploy:production-owned
 ```
 
 Smoke check:

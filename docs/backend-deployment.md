@@ -6,8 +6,20 @@ relay owns only Plaid API credentials and forwards authenticated Plaid requests.
 
 ## Recommended First Production Shape
 
-Use the Cloudflare Worker in `workers/plaid-relay` as a small HTTPS service at
-`https://api.budgettracer.app` with:
+Use the Cloudflare Worker in `workers/plaid-relay` as a small HTTPS service.
+The no-domain production URL is:
+
+```text
+https://budgettracer-plaid-relay.tanner-m-leo.workers.dev
+```
+
+The later owned-domain URL is:
+
+```text
+https://api.budgettracer.app
+```
+
+The service exposes:
 
 - `GET /health`
 - `POST /v1/plaid/link-token`
@@ -34,9 +46,15 @@ wrangler secret put PLAID_CLIENT_ID --env production
 wrangler secret put PLAID_PRODUCTION_SECRET --env production
 ```
 
-The production Worker exposes the owned API URL at
-`https://api.budgettracer.app` and the Universal Link/OAuth URL at
-`https://app.budgettracer.com`.
+The default production Worker can expose the free `workers.dev` URL first:
+
+```text
+https://budgettracer-plaid-relay.<your-cloudflare-subdomain>.workers.dev
+```
+
+After an owned domain is available, deploy the `production-owned` Worker
+environment to expose the owned API URL at `https://api.budgettracer.app` and
+the Universal Link/OAuth URL at `https://app.budgettracer.com`.
 
 Do not configure Plaid webhooks for the minimal stateless relay yet. The app
 stores access tokens and sync cursors locally, so there is no server-side token
@@ -71,21 +89,25 @@ The checked-in app Info.plists default production archives to:
 
 ```text
 BudgetTracerDataMode=secure-local
-BudgetTracerPlaidRelayURL=https://api.budgettracer.app
+BudgetTracerPlaidRelayURL=https://budgettracer-plaid-relay.tanner-m-leo.workers.dev
 ```
 
 Local Xcode schemes set `BUDGETTRACER_DATA_MODE=demo`, which overrides the
 Info.plist and keeps UI review on sample data unless secure-local mode is
 explicitly requested.
 
+When the owned-domain Worker is ready, update `BudgetTracerPlaidRelayURL` to
+`https://api.budgettracer.app` in the app Info.plists and `project.yml`.
+
 ## Backend Options
 
 ### Option A: Cloudflare Worker Relay
 
 Use the committed `workers/plaid-relay` project. Development deploys to
-`workers.dev`; production attaches owned Cloudflare Custom Domains:
-`api.budgettracer.app` for API traffic and `app.budgettracer.com` for Universal
-Link/OAuth paths.
+`workers.dev`; production can also start on `workers.dev` without buying a
+domain. When the app is ready for a branded production URL, deploy
+`production-owned` and attach Cloudflare Custom Domains: `api.budgettracer.app`
+for API traffic and `app.budgettracer.com` for Universal Link/OAuth paths.
 
 Advantages:
 

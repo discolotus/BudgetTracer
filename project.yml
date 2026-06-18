@@ -28,7 +28,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         BudgetTracerDataMode: secure-local
-        BudgetTracerPlaidRelayURL: https://api.budgettracer.app
+        BudgetTracerPlaidRelayURL: https://budgettracer-plaid-relay.tanner-m-leo.workers.dev
         UILaunchScreen: {}
     settings:
       base:
@@ -57,7 +57,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         BudgetTracerDataMode: secure-local
-        BudgetTracerPlaidRelayURL: https://api.budgettracer.app
+        BudgetTracerPlaidRelayURL: https://budgettracer-plaid-relay.tanner-m-leo.workers.dev
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.budgettracer.mac
