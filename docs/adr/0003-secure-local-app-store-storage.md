@@ -24,4 +24,8 @@ BudgetTracer is intentionally one local user per install. For App Store use, the
 
 - Secure-local mode fails closed when the runtime SQLite library does not report SQLCipher support.
 - Local sandbox scripts may still use the existing development backend and file token vault, but those are not the App Store storage path.
+- SwiftPM local secure-local launches may opt into `BUDGETTRACER_DEV_SECRET_STORE=file`
+  to avoid repeated macOS Keychain prompts from ad-hoc signed dev bundles. This
+  uses a separate development database and secret directory under
+  `~/.budgettracer/secure-local-dev` and is not the production/App Store path.
 - Xcode app targets now declare Sign in with Apple, associated domains, Keychain access, and macOS App Sandbox entitlements. The associated domain value must be replaced with the production Plaid OAuth domain before release.

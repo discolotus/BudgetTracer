@@ -23,6 +23,46 @@ final class BudgetWorkspaceTests: XCTestCase {
         XCTAssertEqual(lastSyncedAt, syncedAt)
     }
 
+    func testAutomaticRefreshKeepsCachedSnapshotAndConnectedStateWhenBackgroundSyncFails() async throws {
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            syncError: TestProviderError.syncFailed
+        )
+        let workspace = BudgetWorkspace(
+            snapshot: BudgetSnapshot(institutions: [], accounts: [], categories: [], transactions: []),
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.refresh()
+
+        XCTAssertEqual(provider.cachedFetchCount, 1)
+        XCTAssertEqual(provider.requestedPolicies, [.syncIfStale(maxAge: 300)])
+        XCTAssertEqual(workspace.snapshot.institutions, [Institution(id: "bank", name: "Bank")])
+        XCTAssertEqual(workspace.connectionState, .connected(institutionCount: 1, lastSyncedAt: nil))
+    }
+
+    func testForcedRefreshReportsSyncFailureAfterLoadingCachedSnapshot() async throws {
+        let provider = RecordingFinancialDataProvider(
+            snapshot: makeSnapshot(lastSuccessfulSyncAt: nil),
+            syncError: TestProviderError.syncFailed
+        )
+        let workspace = BudgetWorkspace(
+            snapshot: BudgetSnapshot(institutions: [], accounts: [], categories: [], transactions: []),
+            connectionState: .connected(institutionCount: 0, lastSyncedAt: nil),
+            dataProvider: provider,
+            userDefaults: try makeUserDefaults()
+        )
+
+        await workspace.refresh(forceSync: true)
+
+        XCTAssertEqual(provider.cachedFetchCount, 1)
+        XCTAssertEqual(provider.requestedPolicies, [.forceSync])
+        XCTAssertEqual(workspace.snapshot.institutions, [Institution(id: "bank", name: "Bank")])
+        XCTAssertEqual(workspace.connectionState, .failed(message: "Sync failed."))
+    }
+
     func testForceRefreshRequestsForceSyncAndDoesNotInventSyncTimestamp() async throws {
         let provider = RecordingFinancialDataProvider(snapshot: makeSnapshot(lastSuccessfulSyncAt: nil))
         let workspace = BudgetWorkspace(
@@ -165,6 +205,20 @@ final class BudgetWorkspaceTests: XCTestCase {
         XCTAssertNil(controller.lastErrorMessage)
     }
 
+    func testWorkspaceFactoryCanDisableAppLockForLocalDevelopment() {
+        XCTAssertTrue(
+            BudgetTracerAppWorkspaceFactory.disablesAppLock(
+                environment: ["BUDGETTRACER_DISABLE_APP_LOCK": "1"]
+            )
+        )
+        XCTAssertTrue(
+            BudgetTracerAppWorkspaceFactory.disablesAppLock(
+                environment: ["BUDGETTRACER_DISABLE_APP_LOCK": "true"]
+            )
+        )
+        XCTAssertFalse(BudgetTracerAppWorkspaceFactory.disablesAppLock(environment: [:]))
+    }
+
     func testMarkingRecurringSweepsEveryTransactionOfTheSameMerchant() {
         func market(_ id: String) -> BudgetTransaction {
             BudgetTransaction(id: id, accountID: "checking", categoryID: nil, postedAt: Date(), merchantName: "Neighborhood Market", amount: Money(minorUnits: -1_500))
@@ -211,6 +265,8 @@ private final class RecordingFinancialDataProvider: FinancialDataProvider, @unch
     private let linkToken: String
     private let exchangeSnapshot: BudgetSnapshot?
     private let sandboxSnapshot: BudgetSnapshot?
+    private let syncError: Error?
+    private(set) var cachedFetchCount = 0
     private(set) var requestedPolicies: [BudgetSnapshotFreshnessPolicy] = []
     private(set) var linkTokenRequestCount = 0
     private(set) var exchangeRequests: [PlaidExchangeRequest] = []
@@ -220,20 +276,26 @@ private final class RecordingFinancialDataProvider: FinancialDataProvider, @unch
         snapshot: BudgetSnapshot,
         linkToken: String = "link-token",
         exchangeSnapshot: BudgetSnapshot? = nil,
-        sandboxSnapshot: BudgetSnapshot? = nil
+        sandboxSnapshot: BudgetSnapshot? = nil,
+        syncError: Error? = nil
     ) {
         self.snapshot = snapshot
         self.linkToken = linkToken
         self.exchangeSnapshot = exchangeSnapshot
         self.sandboxSnapshot = sandboxSnapshot
+        self.syncError = syncError
     }
 
     func fetchBudgetSnapshot() async throws -> BudgetSnapshot {
-        snapshot
+        cachedFetchCount += 1
+        return snapshot
     }
 
     func fetchBudgetSnapshot(freshnessPolicy: BudgetSnapshotFreshnessPolicy) async throws -> BudgetSnapshot {
         requestedPolicies.append(freshnessPolicy)
+        if let syncError {
+            throw syncError
+        }
         return snapshot
     }
 
@@ -279,4 +341,12 @@ private struct SucceedingUnlockAuthenticator: AppUnlockAuthenticating {
 private struct PlaidExchangeRequest: Equatable {
     var publicToken: String
     var institutionID: String?
+}
+
+private enum TestProviderError: LocalizedError {
+    case syncFailed
+
+    var errorDescription: String? {
+        "Sync failed."
+    }
 }

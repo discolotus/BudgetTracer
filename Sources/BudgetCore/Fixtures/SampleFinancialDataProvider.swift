@@ -37,8 +37,32 @@ public actor SampleFinancialDataProvider: FinancialDataProvider {
 
             var updated = transaction
             updated.categoryID = categoryID
+            updated.categoryAssignmentSource = .manual
+            updated.categoryAssignmentRuleID = nil
             return updated
         }
+        return snapshot
+    }
+
+    public func saveAssignmentRule(
+        _ rule: BudgetAssignmentRule,
+        applyToExisting: Bool
+    ) async throws -> BudgetSnapshot {
+        if let index = snapshot.assignmentRules.firstIndex(where: { $0.id == rule.id }) {
+            snapshot.assignmentRules[index] = rule
+        } else {
+            snapshot.assignmentRules.append(rule)
+        }
+
+        if applyToExisting {
+            snapshot = BudgetAssignmentRuleEngine.applying(rule, to: snapshot)
+        }
+
+        return snapshot
+    }
+
+    public func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot {
+        snapshot.assignmentRules.removeAll { $0.id == id }
         return snapshot
     }
 

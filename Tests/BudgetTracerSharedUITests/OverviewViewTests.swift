@@ -22,8 +22,30 @@ final class OverviewViewTests: XCTestCase {
         )
     }
 
-    func testPlaidControlsAreHiddenOnlyWhileWorkspaceIsConnecting() {
-        XCTAssertFalse(OverviewPlaidControlVisibility.showsControls(for: .connecting))
+    func testPlaidControlsStayVisibleWhileWorkspaceIsRefreshing() {
+        XCTAssertTrue(OverviewPlaidControlVisibility.showsControls(for: .connecting))
+    }
+
+    func testAccountsRailShowsPlaidLinkFailureStatus() throws {
+        let status = try XCTUnwrap(
+            AccountsRailPlaidStatus.status(
+                for: .failed(message: "Plaid relay returned HTTP 401.")
+            )
+        )
+
+        XCTAssertEqual(
+            status.message,
+            "Connection failed: Plaid relay returned HTTP 401."
+        )
+        XCTAssertEqual(status.systemImage, "exclamationmark.triangle")
+        XCTAssertFalse(status.showsProgress)
+    }
+
+    func testAccountsRailShowsPlaidLinkProgressStatus() throws {
+        let status = try XCTUnwrap(AccountsRailPlaidStatus.status(for: .preparing))
+
+        XCTAssertEqual(status.message, "Preparing Plaid Link...")
+        XCTAssertTrue(status.showsProgress)
     }
 }
 #endif

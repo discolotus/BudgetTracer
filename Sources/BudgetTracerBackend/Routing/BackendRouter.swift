@@ -71,6 +71,10 @@ actor BackendRouter {
                 return try upsertCategory(request)
             case ("DELETE", "/categories"):
                 return try deleteCategory(request)
+            case ("PUT", "/assignment-rules"):
+                return try upsertAssignmentRule(request)
+            case ("DELETE", "/assignment-rules"):
+                return try deleteAssignmentRule(request)
             default:
                 throw HTTPError.notFound("No route for \(request.method) \(request.path).")
             }
@@ -364,6 +368,56 @@ actor BackendRouter {
 
         try repository.deleteBudgetCategory(id: body.id, userID: userID)
 
+        return try cachedSnapshot(userID: userID)
+    }
+
+    private func upsertAssignmentRule(_ request: HTTPRequest) throws -> HTTPResponse {
+        let body = try request.jsonBody(UpsertAssignmentRuleRequest.self)
+        let userID = body.userID ?? defaultUserID
+
+        let trimmedName = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMerchant = body.merchantContains.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw HTTPError.badRequest("name is required.")
+        }
+        guard !trimmedMerchant.isEmpty else {
+            throw HTTPError.badRequest("merchant_contains is required.")
+        }
+        guard !body.categoryID.isEmpty else {
+            throw HTTPError.badRequest("category_id is required.")
+        }
+
+        let rule = BudgetAssignmentRule(
+            id: body.id ?? UUID().uuidString,
+            name: trimmedName,
+            merchantContains: trimmedMerchant,
+            categoryID: body.categoryID,
+            isEnabled: body.isEnabled ?? true,
+            matchField: body.matchField.flatMap(AssignmentRuleMatchField.init(rawValue:)) ?? .merchantName,
+            matchOperator: body.matchOperator.flatMap(AssignmentRuleTextOperator.init(rawValue:)) ?? .contains,
+            amountFilter: body.amountFilter.flatMap(AssignmentRuleAmountFilter.init(rawValue:)) ?? .any,
+            accountID: body.accountID
+        )
+
+        try repository.ensureUser(id: userID)
+        try repository.upsertAssignmentRule(rule, userID: userID)
+
+        if body.applyToExisting ?? true {
+            try repository.applyAssignmentRules(userID: userID, ruleIDs: [rule.id])
+        }
+
+        return try cachedSnapshot(userID: userID)
+    }
+
+    private func deleteAssignmentRule(_ request: HTTPRequest) throws -> HTTPResponse {
+        let body = try request.jsonBody(DeleteAssignmentRuleRequest.self)
+        let userID = body.userID ?? defaultUserID
+
+        guard !body.id.isEmpty else {
+            throw HTTPError.badRequest("id is required.")
+        }
+
+        try repository.deleteAssignmentRule(id: body.id, userID: userID)
         return try cachedSnapshot(userID: userID)
     }
 }

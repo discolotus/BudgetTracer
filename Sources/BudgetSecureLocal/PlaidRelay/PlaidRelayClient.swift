@@ -95,10 +95,23 @@ public struct PlaidRelayClient: Sendable {
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw PlaidRelayClientError.statusCode(httpResponse.statusCode)
+            throw PlaidRelayClientError.statusCode(
+                httpResponse.statusCode,
+                message: Self.errorMessage(from: data)
+            )
         }
 
         return try decoder.decode(ResponseBody.self, from: data)
+    }
+
+    private static func errorMessage(from data: Data) -> String? {
+        if let relayError = try? JSONDecoder().decode(RelayErrorResponse.self, from: data) {
+            return relayError.error
+        }
+
+        let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text?.isEmpty == false ? text : nil
     }
 
     private static func validate(baseURL: URL, securityPolicy: PlaidRelaySecurityPolicy) throws {
@@ -137,7 +150,7 @@ public struct PlaidRelayExchangePublicTokenResponse: Codable, Hashable, Sendable
 public enum PlaidRelayClientError: Error, LocalizedError, Sendable {
     case insecureBaseURL(String)
     case invalidResponse
-    case statusCode(Int)
+    case statusCode(Int, message: String?)
 
     public var errorDescription: String? {
         switch self {
@@ -145,10 +158,17 @@ public enum PlaidRelayClientError: Error, LocalizedError, Sendable {
             return "Plaid relay URL must use HTTPS: \(url)"
         case .invalidResponse:
             return "Plaid relay returned an invalid response."
-        case .statusCode(let statusCode):
+        case .statusCode(let statusCode, let message):
+            if let message, !message.isEmpty {
+                return "Plaid relay returned HTTP \(statusCode): \(message)"
+            }
             return "Plaid relay returned HTTP \(statusCode)."
         }
     }
+}
+
+private struct RelayErrorResponse: Decodable {
+    var error: String?
 }
 
 private struct LinkTokenRelayRequest: Encodable {

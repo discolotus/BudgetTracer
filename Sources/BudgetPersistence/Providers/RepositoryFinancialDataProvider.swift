@@ -13,4 +13,22 @@ public actor RepositoryFinancialDataProvider: FinancialDataProvider {
     public func fetchBudgetSnapshot() async throws -> BudgetSnapshot {
         try repository.fetchSnapshot(userID: userID)
     }
+
+    public func saveAssignmentRule(
+        _ rule: BudgetAssignmentRule,
+        applyToExisting: Bool
+    ) async throws -> BudgetSnapshot {
+        try repository.upsertAssignmentRule(rule, userID: userID)
+
+        if applyToExisting {
+            try repository.applyAssignmentRules(userID: userID, ruleIDs: [rule.id])
+        }
+
+        return try repository.fetchSnapshot(userID: userID)
+    }
+
+    public func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot {
+        try repository.deleteAssignmentRule(id: id, userID: userID)
+        return try repository.fetchSnapshot(userID: userID)
+    }
 }

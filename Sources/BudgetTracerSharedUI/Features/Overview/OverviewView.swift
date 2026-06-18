@@ -197,10 +197,8 @@ private struct OverviewHeroCard: View {
 enum OverviewPlaidControlVisibility {
     static func showsControls(for connectionState: PlaidConnectionState) -> Bool {
         switch connectionState {
-        case .notConnected, .failed, .connected:
+        case .notConnected, .connecting, .failed, .connected:
             return true
-        case .connecting:
-            return false
         }
     }
 }

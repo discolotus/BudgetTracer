@@ -157,6 +157,44 @@ struct DeleteCategoryRequest: Decodable {
     }
 }
 
+struct UpsertAssignmentRuleRequest: Decodable {
+    var id: String?
+    var name: String
+    var merchantContains: String
+    var matchField: String?
+    var matchOperator: String?
+    var amountFilter: String?
+    var accountID: String?
+    var categoryID: String
+    var isEnabled: Bool?
+    var applyToExisting: Bool?
+    var userID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case merchantContains = "merchant_contains"
+        case matchField = "match_field"
+        case matchOperator = "match_operator"
+        case amountFilter = "amount_filter"
+        case accountID = "account_id"
+        case categoryID = "category_id"
+        case isEnabled = "is_enabled"
+        case applyToExisting = "apply_to_existing"
+        case userID = "user_id"
+    }
+}
+
+struct DeleteAssignmentRuleRequest: Decodable {
+    var id: String
+    var userID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+    }
+}
+
 struct RelayLinkTokenRequest: Decodable {
     var clientUserID: String?
 
@@ -211,6 +249,7 @@ struct SnapshotResponse: Encodable {
     var institutions: [InstitutionResponse]
     var accounts: [AccountResponse]
     var categories: [CategoryResponse]
+    var assignmentRules: [AssignmentRuleResponse]
     var transactions: [TransactionResponse]
     var recurringTransactionIDs: [String]
     var lastSuccessfulSyncAt: Date?
@@ -223,6 +262,7 @@ struct SnapshotResponse: Encodable {
         institutions = snapshot.institutions.map(InstitutionResponse.init)
         accounts = snapshot.accounts.map(AccountResponse.init)
         categories = snapshot.categories.map(CategoryResponse.init)
+        assignmentRules = snapshot.assignmentRules.map(AssignmentRuleResponse.init)
         transactions = snapshot.transactions.map(TransactionResponse.init)
         recurringTransactionIDs = Array(snapshot.recurringTransactionIDs).sorted()
         lastSuccessfulSyncAt = snapshot.lastSuccessfulSyncAt
@@ -236,6 +276,7 @@ struct SnapshotResponse: Encodable {
         case institutions
         case accounts
         case categories
+        case assignmentRules = "assignment_rules"
         case transactions
         case recurringTransactionIDs = "recurring_transaction_ids"
         case lastSuccessfulSyncAt = "last_successful_sync_at"
@@ -314,10 +355,48 @@ struct CategoryResponse: Encodable {
     }
 }
 
+struct AssignmentRuleResponse: Encodable {
+    var id: String
+    var name: String
+    var merchantContains: String
+    var matchField: String
+    var matchOperator: String
+    var amountFilter: String
+    var accountID: String?
+    var categoryID: String
+    var isEnabled: Bool
+
+    init(_ rule: BudgetAssignmentRule) {
+        id = rule.id
+        name = rule.name
+        merchantContains = rule.merchantContains
+        matchField = rule.matchField.rawValue
+        matchOperator = rule.matchOperator.rawValue
+        amountFilter = rule.amountFilter.rawValue
+        accountID = rule.accountID
+        categoryID = rule.categoryID
+        isEnabled = rule.isEnabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case merchantContains = "merchant_contains"
+        case matchField = "match_field"
+        case matchOperator = "match_operator"
+        case amountFilter = "amount_filter"
+        case accountID = "account_id"
+        case categoryID = "category_id"
+        case isEnabled = "is_enabled"
+    }
+}
+
 struct TransactionResponse: Encodable {
     var id: String
     var accountID: String
     var categoryID: String?
+    var categoryAssignmentSource: String?
+    var categoryAssignmentRuleID: String?
     var postedAt: Date
     var occurredAt: Date
     var merchantName: String
@@ -327,6 +406,8 @@ struct TransactionResponse: Encodable {
         id = transaction.id
         accountID = transaction.accountID
         categoryID = transaction.categoryID
+        categoryAssignmentSource = transaction.categoryAssignmentSource?.rawValue
+        categoryAssignmentRuleID = transaction.categoryAssignmentRuleID
         postedAt = transaction.postedAt
         occurredAt = transaction.occurredAt
         merchantName = transaction.merchantName
@@ -337,6 +418,8 @@ struct TransactionResponse: Encodable {
         case id
         case accountID = "account_id"
         case categoryID = "category_id"
+        case categoryAssignmentSource = "category_assignment_source"
+        case categoryAssignmentRuleID = "category_assignment_rule_id"
         case postedAt = "posted_at"
         case occurredAt = "occurred_at"
         case merchantName = "merchant_name"

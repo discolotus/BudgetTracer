@@ -84,6 +84,71 @@ final class BudgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.availableCash, .dollars(1200))
     }
 
+    func testAccountBalanceHistoryReconstructsCheckingBalancesFromCurrentBalance() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let day1 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let day2 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 2)))
+        let day3 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 3)))
+        let snapshot = BudgetSnapshot(
+            institutions: [],
+            accounts: [
+                FinancialAccount(
+                    id: "checking",
+                    institutionID: "bank",
+                    name: "Checking",
+                    kind: .checking,
+                    currentBalance: .dollars(1000)
+                )
+            ],
+            categories: [],
+            transactions: [
+                BudgetTransaction(id: "payroll", accountID: "checking", categoryID: nil, postedAt: day1, merchantName: "Payroll", amount: .dollars(500)),
+                BudgetTransaction(id: "rent", accountID: "checking", categoryID: nil, postedAt: day2, merchantName: "Rent", amount: .dollars(-200)),
+                BudgetTransaction(id: "market", accountID: "checking", categoryID: nil, postedAt: day3, merchantName: "Market", amount: .dollars(-100))
+            ],
+            lastSuccessfulSyncAt: day3
+        )
+
+        let points = snapshot.accountBalanceHistory(for: "checking", calendar: calendar, anchorDate: day3)
+
+        XCTAssertEqual(points.map(\.date), [day1, day2, day3])
+        XCTAssertEqual(points.map(\.balance), [.dollars(1300), .dollars(1100), .dollars(1000)])
+        XCTAssertEqual(points.map(\.dailyNet), [.dollars(500), .dollars(-200), .dollars(-100)])
+    }
+
+    func testAccountBalanceHistoryTreatsCreditCardPurchasesAsDebtIncreases() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let day1 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let day2 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 2)))
+        let snapshot = BudgetSnapshot(
+            institutions: [],
+            accounts: [
+                FinancialAccount(
+                    id: "card",
+                    institutionID: "bank",
+                    name: "Card",
+                    kind: .creditCard,
+                    currentBalance: .dollars(410)
+                )
+            ],
+            categories: [],
+            transactions: [
+                BudgetTransaction(id: "purchase", accountID: "card", categoryID: nil, postedAt: day1, merchantName: "Store", amount: .dollars(-100)),
+                BudgetTransaction(id: "payment", accountID: "card", categoryID: nil, postedAt: day2, merchantName: "Payment", amount: .dollars(40))
+            ],
+            lastSuccessfulSyncAt: day2
+        )
+
+        let points = snapshot.accountBalanceHistory(for: "card", calendar: calendar, anchorDate: day2)
+
+        XCTAssertEqual(points.map(\.balance), [.dollars(450), .dollars(410)])
+        XCTAssertEqual(points.map(\.dailyNet), [.dollars(100), .dollars(-40)])
+    }
+
     func testAccountOverridesAdjustAvailableCashClassificationAndExclusion() {
         let snapshot = BudgetSnapshot(
             institutions: [],
@@ -128,6 +193,62 @@ final class BudgetSnapshotTests: XCTestCase {
         XCTAssertEqual(adjusted.accounts.first { $0.id == "brokerage" }?.kind, .savings)
         XCTAssertFalse(adjusted.includesInAvailableCash(adjusted.accounts[0]))
         XCTAssertEqual(adjusted.availableCash, .dollars(9600))
+    }
+
+    func testAccountOverridesCanExcludeCreditCardFromDebtPlotWithoutChangingKind() {
+        let snapshot = BudgetSnapshot(
+            institutions: [],
+            accounts: [
+                FinancialAccount(
+                    id: "personal-card",
+                    institutionID: "bank",
+                    name: "Personal Card",
+                    kind: .creditCard,
+                    currentBalance: .dollars(400)
+                ),
+                FinancialAccount(
+                    id: "business-card",
+                    institutionID: "bank",
+                    name: "Business Card",
+                    kind: .creditCard,
+                    currentBalance: .dollars(900)
+                )
+            ],
+            categories: [],
+            transactions: [],
+            accountOverrides: [
+                "business-card": AccountOverride(includesInCreditCardDebt: false)
+            ]
+        )
+
+        XCTAssertEqual(snapshot.accounts.first { $0.id == "business-card" }?.kind, .creditCard)
+        XCTAssertTrue(snapshot.includesInCreditCardDebt(snapshot.accounts[0]))
+        XCTAssertFalse(snapshot.includesInCreditCardDebt(snapshot.accounts[1]))
+        XCTAssertEqual(snapshot.creditDebt, .dollars(400))
+    }
+
+    func testApplyingOverridesMigratesOldExcludedCreditCardOverrideWithoutChangingKind() {
+        let account = FinancialAccount(
+            id: "business-card",
+            institutionID: "bank",
+            name: "Business Card",
+            kind: .creditCard,
+            currentBalance: .dollars(900)
+        )
+        let snapshot = BudgetSnapshot(institutions: [], accounts: [account], categories: [], transactions: [])
+
+        let adjusted = snapshot.applying(
+            accountOverrides: [
+                account.id: AccountOverride(kind: .other, includesInAvailableCash: false)
+            ]
+        )
+
+        XCTAssertEqual(adjusted.accounts.first?.kind, .creditCard)
+        XCTAssertFalse(adjusted.includesInCreditCardDebt(adjusted.accounts[0]))
+        XCTAssertEqual(
+            adjusted.accountOverrides[account.id],
+            AccountOverride(includesInCreditCardDebt: false)
+        )
     }
 
     func testSpendingByCategorySortsLargestFirst() {

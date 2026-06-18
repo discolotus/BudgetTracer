@@ -96,4 +96,40 @@ Normal app UI review should use demo mode instead:
 
 Demo mode does not read Keychain and does not call Plaid.
 
+## Secure-Local Dev Secret Store
+
+The secure-local app path normally stores the SQLCipher database key and Plaid
+access-token refs in Keychain. That is the production behavior, but local
+SwiftPM app bundles are rebuilt and ad-hoc signed often enough that macOS may
+ask for Keychain access repeatedly.
+
+To opt into a separate local file-backed dev store:
+
+```bash
+BUDGETTRACER_DEV_SECRET_STORE=file ./script/build_and_run.sh
+```
+
+That stores development-only secret material outside the repo under:
+
+```text
+~/.budgettracer/secure-local-dev/secrets
+~/.budgettracer/secure-local-dev/BudgetTracer.sqlite
+```
+
+To override the location:
+
+```bash
+export BUDGETTRACER_DEV_STATE_DIR=/path/to/dev-state
+```
+
+To test the production Keychain path locally:
+
+```bash
+export BUDGETTRACER_DEV_SECRET_STORE=keychain
+```
+
+If `BUDGETTRACER_DEV_SECRET_STORE` is unset, secure-local uses the normal
+Keychain-backed app-container database so existing connected accounts remain
+visible.
+
 If you keep a plaintext credential file for local sandbox work, it should live outside the repo with `chmod 600` inside a private directory. Use production-grade secret storage before connecting real user data.

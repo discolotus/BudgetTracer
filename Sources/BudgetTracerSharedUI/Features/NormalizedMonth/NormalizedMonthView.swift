@@ -1,5 +1,6 @@
 import BudgetCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NormalizedMonthView: View {
     var snapshot: BudgetSnapshot
@@ -8,6 +9,10 @@ struct NormalizedMonthView: View {
     var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
     var setRecurringSeries: ([BudgetTransaction.ID], Bool) -> Void = { _, _ in }
     var setCategorySeries: ([BudgetTransaction.ID], BudgetCategory.ID?) -> Void = { _, _ in }
+    var setAccountKind: (FinancialAccount.ID, AccountKind) -> Void = { _, _ in }
+    var setAccountAvailableCash: (FinancialAccount.ID, Bool) -> Void = { _, _ in }
+    var setAccountOverride: (FinancialAccount.ID, AccountOverride?) -> Void = { _, _ in }
+    var saveAssignmentRule: (BudgetAssignmentRule, Bool) -> Void = { _, _ in }
 
     @State private var didApplyLaunchState = false
     @State private var selectedTransactionID: BudgetTransaction.ID?
@@ -36,6 +41,9 @@ struct NormalizedMonthView: View {
 
     @SceneStorage("BudgetTracer.normalizedMonth.showsCardAdjustedBalance")
     private var showsCardAdjustedBalance = true
+
+    @SceneStorage("BudgetTracer.normalizedMonth.plotAccountsExpanded")
+    private var plotAccountsExpanded = true
 
     private var analysisDate: Date {
         selectedMonth ?? defaultAnalysisMonth
@@ -361,6 +369,16 @@ struct NormalizedMonthView: View {
                     .padding(18)
                     .budgetTracerCard(cornerRadius: 24)
 
+                CashFlowAccountBreakdown(
+                    snapshot: snapshot,
+                    isExpanded: $plotAccountsExpanded,
+                    setAccountKind: setAccountKind,
+                    setAccountAvailableCash: setAccountAvailableCash,
+                    setAccountOverride: setAccountOverride
+                )
+                    .padding(18)
+                    .budgetTracerCard(cornerRadius: 24)
+
                 DailySpendingPlot(
                     points: spendingPoints,
                     previousMonthPoints: previousMonthSpendingPoints,
@@ -445,6 +463,7 @@ struct NormalizedMonthView: View {
                 snapshot: snapshot,
                 setRecurring: setRecurring,
                 setCategory: setCategory,
+                saveAssignmentRule: saveAssignmentRule,
                 dismiss: { selectedTransactionID = nil }
             )
             .presentationDetents([.medium, .large])
@@ -1376,6 +1395,338 @@ private struct CashFlowPlot: View {
 
 private struct PreviousMonthLineStyle {
     var stroke = StrokeStyle(lineWidth: 2, lineJoin: .round, dash: [6, 5])
+}
+
+private struct CashFlowAccountBreakdown: View {
+    var snapshot: BudgetSnapshot
+    @Binding var isExpanded: Bool
+    var setAccountKind: (FinancialAccount.ID, AccountKind) -> Void
+    var setAccountAvailableCash: (FinancialAccount.ID, Bool) -> Void
+    var setAccountOverride: (FinancialAccount.ID, AccountOverride?) -> Void
+
+    @State private var targetedGroup: PlotAccountGroup?
+
+    private var cashAccounts: [FinancialAccount] {
+        snapshot.accounts
+            .filter { snapshot.includesInAvailableCash($0) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var cardAccounts: [FinancialAccount] {
+        snapshot.accounts
+            .filter { snapshot.includesInCreditCardDebt($0) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var excludedAccounts: [FinancialAccount] {
+        snapshot.accounts
+            .filter { account in
+                !snapshot.includesInAvailableCash(account) && !snapshot.includesInCreditCardDebt(account)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Button {
+                withAnimation(BudgetTracerStyle.spring) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                        .frame(width: 14)
+
+                    Text("Plot accounts")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+
+                    Spacer()
+
+                    Text((snapshot.availableCash - snapshot.creditDebt).formatted)
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(BudgetTracerStyle.ink)
+                        .contentTransition(.numericText())
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Collapse Plot Accounts" : "Expand Plot Accounts")
+
+            if isExpanded {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 24) {
+                        accountGroup(.cash, accounts: cashAccounts, emptyText: "No cash accounts")
+                        accountGroup(.cards, accounts: cardAccounts, emptyText: "No card accounts")
+                        accountGroup(.excluded, accounts: excludedAccounts, emptyText: "None")
+                    }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        accountGroup(.cash, accounts: cashAccounts, emptyText: "No cash accounts")
+                        accountGroup(.cards, accounts: cardAccounts, emptyText: "No card accounts")
+                        accountGroup(.excluded, accounts: excludedAccounts, emptyText: "None")
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func accountGroup(_ group: PlotAccountGroup, accounts: [FinancialAccount], emptyText: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(group.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                Spacer()
+                Text(accountsTotal(accounts).formatted)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+            }
+
+            if accounts.isEmpty {
+                Text(emptyText)
+                    .font(.caption)
+                    .foregroundStyle(BudgetTracerStyle.inkFaint)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(accounts) { account in
+                        accountRow(account, in: group)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(minHeight: 82, alignment: .topLeading)
+        .background(
+            targetedGroup == group ? BudgetTracerStyle.accentSoft : Color.clear,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    targetedGroup == group ? BudgetTracerStyle.accent.opacity(0.45) : BudgetTracerStyle.hairline,
+                    lineWidth: 1
+                )
+        }
+        .onDrop(
+            of: AccountDragPayload.supportedContentTypes,
+            isTargeted: dropTargetBinding(for: group),
+            perform: { providers in
+                acceptAccountDrop(providers, to: group)
+            }
+        )
+    }
+
+    private func accountRow(_ account: FinancialAccount, in group: PlotAccountGroup) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BudgetTracerStyle.inkFaint)
+                .frame(width: 10)
+            Image(systemName: account.kind.plotSystemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BudgetTracerStyle.accent)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.name)
+                    .font(.caption)
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .lineLimit(1)
+                Text(account.kind.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+            }
+            Spacer(minLength: 8)
+            Text(account.currentBalance.formatted)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(BudgetTracerStyle.ink)
+
+            accountMoveMenu(account)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onDrag {
+            AccountDragPayload.provider(accountID: account.id, suggestedName: account.name)
+        } preview: {
+            HStack(spacing: 8) {
+                Image(systemName: account.kind.plotSystemImage)
+                Text(account.name)
+            }
+            .font(.caption.weight(.medium))
+            .padding(8)
+            .background(BudgetTracerStyle.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .onDrop(
+            of: AccountDragPayload.supportedContentTypes,
+            isTargeted: dropTargetBinding(for: group),
+            perform: { providers in
+                acceptAccountDrop(providers, to: group)
+            }
+        )
+        .help("Drag to move account between plot groups")
+    }
+
+    private func accountMoveMenu(_ account: FinancialAccount) -> some View {
+        Menu {
+            ForEach(PlotAccountGroup.allCases, id: \.self) { group in
+                Button(group.title) {
+                    moveAccount(account.id, to: group)
+                }
+                .disabled(PlotAccountMovePlanner.actions(for: account, destination: group, snapshot: snapshot).isEmpty)
+            }
+        } label: {
+            Image(systemName: "arrow.left.arrow.right.circle")
+                .font(.caption)
+                .foregroundStyle(BudgetTracerStyle.inkMuted)
+                .frame(width: 18, height: 18)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Move Account")
+    }
+
+    private func accountsTotal(_ accounts: [FinancialAccount]) -> Money {
+        accounts
+            .map(\.currentBalance)
+            .reduce(Money(minorUnits: 0), +)
+    }
+
+    private func moveAccount(_ accountID: FinancialAccount.ID, to group: PlotAccountGroup) {
+        guard let account = snapshot.accounts.first(where: { $0.id == accountID }) else {
+            return
+        }
+
+        guard !PlotAccountMovePlanner.actions(for: account, destination: group, snapshot: snapshot).isEmpty else {
+            return
+        }
+
+        setAccountOverride(
+            accountID,
+            PlotAccountMovePlanner.override(for: account, destination: group, snapshot: snapshot)
+        )
+    }
+
+    private func dropTargetBinding(for group: PlotAccountGroup) -> Binding<Bool> {
+        Binding {
+            targetedGroup == group
+        } set: { isTargeted in
+            targetedGroup = isTargeted ? group : (targetedGroup == group ? nil : targetedGroup)
+        }
+    }
+
+    private func acceptAccountDrop(_ providers: [NSItemProvider], to group: PlotAccountGroup) -> Bool {
+        AccountDragPayload.loadAccountID(from: providers) { accountID in
+            moveAccount(accountID, to: group)
+        }
+    }
+}
+
+enum PlotAccountGroup: String, CaseIterable, Hashable {
+    case cash
+    case cards
+    case excluded
+
+    var title: String {
+        switch self {
+        case .cash:
+            return "Cash in plot"
+        case .cards:
+            return "Cards in plot"
+        case .excluded:
+            return "Excluded"
+        }
+    }
+}
+
+enum PlotAccountMoveAction: Equatable {
+    case setKind(AccountKind)
+    case setAvailableCash(Bool)
+    case setCreditCardDebt(Bool)
+}
+
+enum PlotAccountMovePlanner {
+    static func override(
+        for account: FinancialAccount,
+        destination: PlotAccountGroup,
+        snapshot: BudgetSnapshot
+    ) -> AccountOverride? {
+        var override = snapshot.accountOverrides[account.id] ?? AccountOverride()
+
+        for action in actions(for: account, destination: destination, snapshot: snapshot) {
+            switch action {
+            case .setKind(let kind):
+                override.kind = kind
+                if kind == .checking {
+                    override.includesInAvailableCash = override.includesInAvailableCash ?? true
+                } else {
+                    override.includesInAvailableCash = false
+                }
+            case .setAvailableCash(let isAvailable):
+                override.includesInAvailableCash = isAvailable
+            case .setCreditCardDebt(let isIncluded):
+                override.includesInCreditCardDebt = isIncluded
+            }
+        }
+
+        return override.kind == nil
+            && override.includesInAvailableCash == nil
+            && override.includesInCreditCardDebt == nil ? nil : override
+    }
+
+    static func actions(
+        for account: FinancialAccount,
+        destination: PlotAccountGroup,
+        snapshot: BudgetSnapshot
+    ) -> [PlotAccountMoveAction] {
+        switch destination {
+        case .cash:
+            if account.kind != .checking && account.kind != .savings {
+                return [.setKind(.checking), .setAvailableCash(true)]
+            }
+
+            return snapshot.includesInAvailableCash(account) ? [] : [.setAvailableCash(true)]
+
+        case .cards:
+            var actions: [PlotAccountMoveAction] = []
+            if account.kind != .creditCard {
+                actions.append(.setKind(.creditCard))
+            }
+            if !snapshot.includesInCreditCardDebt(account) {
+                actions.append(.setCreditCardDebt(true))
+            }
+            return actions
+
+        case .excluded:
+            if account.kind == .creditCard {
+                return snapshot.includesInCreditCardDebt(account) ? [.setCreditCardDebt(false)] : []
+            }
+
+            return snapshot.includesInAvailableCash(account) ? [.setAvailableCash(false)] : []
+        }
+    }
+}
+
+private extension AccountKind {
+    var plotSystemImage: String {
+        switch self {
+        case .checking:
+            return "building.columns"
+        case .savings:
+            return "banknote"
+        case .creditCard:
+            return "creditcard"
+        case .investment:
+            return "chart.line.uptrend.xyaxis"
+        case .loan:
+            return "doc.text"
+        case .other:
+            return "wallet.pass"
+        }
+    }
 }
 
 private enum BalancePlotSeries: CaseIterable, Identifiable {

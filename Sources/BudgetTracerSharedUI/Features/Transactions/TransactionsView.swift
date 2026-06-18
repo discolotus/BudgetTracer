@@ -5,8 +5,11 @@ import SwiftUI
 @MainActor
 struct TransactionsView: View {
     var snapshot: BudgetSnapshot
+    var selectedAccountID: FinancialAccount.ID?
+    var clearSelectedAccount: () -> Void = {}
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void = { _, _ in }
     var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void = { _, _ in }
+    var saveAssignmentRule: (BudgetAssignmentRule, Bool) -> Void = { _, _ in }
 
     @SceneStorage("BudgetTracer.transactions.searchText")
     private var searchText = ""
@@ -15,40 +18,52 @@ struct TransactionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                if transactions.isEmpty {
-                    Text("No matching transactions.")
-                        .font(.subheadline)
-                        .foregroundStyle(BudgetTracerStyle.inkMuted)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                } else {
-                    ForEach(transactions.indices, id: \.self) { index in
-                        TransactionRowView(
-                            transaction: transactions[index],
-                            isRecurring: snapshot.recurringTransactionIDs.contains(transactions[index].id),
-                            categoryName: categoryName(for: transactions[index]),
-                            onTap: { selectedTransactionID = transactions[index].id }
-                        )
+            VStack(spacing: 12) {
+                if let selectedAccount {
+                    AccountDetailSummaryView(
+                        account: selectedAccount,
+                        snapshot: snapshot,
+                        transactionCount: transactions.count,
+                        clear: clearSelectedAccount
+                    )
+                }
 
-                        if index < transactions.index(before: transactions.endIndex) {
-                            ThemeRowDivider()
-                                .padding(.leading, 16)
+                VStack(spacing: 0) {
+                    if transactions.isEmpty {
+                        Text("No matching transactions.")
+                            .font(.subheadline)
+                            .foregroundStyle(BudgetTracerStyle.inkMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
+                    } else {
+                        ForEach(transactions.indices, id: \.self) { index in
+                            TransactionRowView(
+                                transaction: transactions[index],
+                                isRecurring: snapshot.recurringTransactionIDs.contains(transactions[index].id),
+                                categoryName: categoryName(for: transactions[index]),
+                                onTap: { selectedTransactionID = transactions[index].id }
+                            )
+
+                            if index < transactions.index(before: transactions.endIndex) {
+                                ThemeRowDivider()
+                                    .padding(.leading, 16)
+                            }
                         }
                     }
                 }
+                .budgetTracerCard()
             }
-            .budgetTracerCard()
             .padding()
         }
         .background(BudgetTracerStyle.canvas)
-        .searchable(text: $searchText, placement: .automatic, prompt: "Search merchant, budget, or date")
+        .searchable(text: $searchText, placement: .automatic, prompt: searchPrompt)
         .sheet(item: selectedTransactionBinding) { transaction in
             TransactionDetailSheet(
                 transaction: transaction,
                 snapshot: snapshot,
                 setRecurring: setRecurring,
                 setCategory: setCategory,
+                saveAssignmentRule: saveAssignmentRule,
                 dismiss: { selectedTransactionID = nil }
             )
             .presentationDetents([.medium, .large])
@@ -56,9 +71,23 @@ struct TransactionsView: View {
     }
 
     private var transactions: [BudgetTransaction] {
-        snapshot.transactions
-            .filter { TransactionSearch.matches($0, query: searchText, in: snapshot) }
-            .sorted { $0.postedAt > $1.postedAt }
+        TransactionListFilter.transactions(
+            in: snapshot,
+            searchText: searchText,
+            selectedAccountID: selectedAccountID
+        )
+    }
+
+    private var selectedAccount: FinancialAccount? {
+        guard let selectedAccountID else {
+            return nil
+        }
+
+        return snapshot.accounts.first { $0.id == selectedAccountID }
+    }
+
+    private var searchPrompt: String {
+        selectedAccount == nil ? "Search merchant, budget, or date" : "Search this account"
     }
 
     private func categoryName(for transaction: BudgetTransaction) -> String? {
@@ -127,9 +156,24 @@ private struct TransactionRowView: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .help("Regular monthly")
                 }
+                categorySourceIcon
             }
             .font(.caption)
             .foregroundStyle(BudgetTracerStyle.inkMuted)
+        }
+    }
+
+    @ViewBuilder
+    private var categorySourceIcon: some View {
+        switch transaction.categoryAssignmentSource {
+        case .rule:
+            Image(systemName: "wand.and.stars")
+                .help("Assigned by rule")
+        case .plaid:
+            Image(systemName: "tag")
+                .help("Suggested by Plaid")
+        case .manual, nil:
+            EmptyView()
         }
     }
 

@@ -9,6 +9,7 @@ public actor SecureLocalFinancialDataProvider: FinancialDataProvider {
     private let store: SecureLocalStore
     private let relayClient: PlaidRelayClient
     private let tokenVault: SecurePlaidTokenVault
+    private let allowsBackgroundSync: Bool
     private let clock: @Sendable () -> Date
     private var isDeleted = false
 
@@ -16,11 +17,13 @@ public actor SecureLocalFinancialDataProvider: FinancialDataProvider {
         store: SecureLocalStore,
         relayClient: PlaidRelayClient,
         tokenVault: SecurePlaidTokenVault,
+        allowsBackgroundSync: Bool = true,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.store = store
         self.relayClient = relayClient
         self.tokenVault = tokenVault
+        self.allowsBackgroundSync = allowsBackgroundSync
         self.clock = clock
     }
 
@@ -38,9 +41,13 @@ public actor SecureLocalFinancialDataProvider: FinancialDataProvider {
         case .cached:
             itemIDs = []
         case .syncIfStale(let maxAge):
-            itemIDs = try store.repository
-                .plaidItemsNeedingSync(userID: userID, maxAge: maxAge, asOf: clock())
-                .map(\.id)
+            if allowsBackgroundSync {
+                itemIDs = try store.repository
+                    .plaidItemsNeedingSync(userID: userID, maxAge: maxAge, asOf: clock())
+                    .map(\.id)
+            } else {
+                itemIDs = []
+            }
         case .forceSync:
             itemIDs = try store.repository.plaidItems(userID: userID).map(\.id)
         }
@@ -108,6 +115,28 @@ public actor SecureLocalFinancialDataProvider: FinancialDataProvider {
             userID: store.configuration.userID
         )
         return try store.repository.fetchSnapshot(userID: store.configuration.userID)
+    }
+
+    public func saveAssignmentRule(
+        _ rule: BudgetAssignmentRule,
+        applyToExisting: Bool
+    ) async throws -> BudgetSnapshot {
+        try ensureStoreIsOpen()
+        let userID = store.configuration.userID
+        try store.repository.upsertAssignmentRule(rule, userID: userID)
+
+        if applyToExisting {
+            try store.repository.applyAssignmentRules(userID: userID, ruleIDs: [rule.id])
+        }
+
+        return try store.repository.fetchSnapshot(userID: userID)
+    }
+
+    public func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot {
+        try ensureStoreIsOpen()
+        let userID = store.configuration.userID
+        try store.repository.deleteAssignmentRule(id: id, userID: userID)
+        return try store.repository.fetchSnapshot(userID: userID)
     }
 
     public func setAccountOverride(accountID: FinancialAccount.ID, override: AccountOverride?) async throws -> BudgetSnapshot {
@@ -192,6 +221,7 @@ public actor SecureLocalFinancialDataProvider: FinancialDataProvider {
             removedCount = response.removed.count
 
             let finishedAt = clock()
+            try store.repository.applyAutomaticCategoryAssignments(userID: item.userID)
             try store.repository.updateTransactionsCursor(
                 itemID: item.id,
                 cursor: response.nextCursor,

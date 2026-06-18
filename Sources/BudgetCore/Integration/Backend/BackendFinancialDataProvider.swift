@@ -106,6 +106,36 @@ public struct BackendFinancialDataProvider: FinancialDataProvider {
         return try decoder.decode(BackendSnapshotResponse.self, from: data).snapshot
     }
 
+    public func saveAssignmentRule(
+        _ rule: BudgetAssignmentRule,
+        applyToExisting: Bool
+    ) async throws -> BudgetSnapshot {
+        try await sendJSON(
+            path: "assignment-rules",
+            method: "PUT",
+            body: UpsertAssignmentRuleRequest(
+                id: rule.id,
+                name: rule.name,
+                merchantContains: rule.merchantContains,
+                matchField: rule.matchField.rawValue,
+                matchOperator: rule.matchOperator.rawValue,
+                amountFilter: rule.amountFilter.rawValue,
+                accountID: rule.accountID,
+                categoryID: rule.categoryID,
+                isEnabled: rule.isEnabled,
+                applyToExisting: applyToExisting
+            )
+        )
+    }
+
+    public func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot {
+        try await sendJSON(
+            path: "assignment-rules",
+            method: "DELETE",
+            body: DeleteAssignmentRuleRequest(id: id)
+        )
+    }
+
     public func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot {
         try await sendJSON(
             path: "categories",
@@ -183,6 +213,7 @@ private struct BackendSnapshotResponse: Decodable {
     var institutions: [BackendInstitution]
     var accounts: [BackendAccount]
     var categories: [BackendCategory]
+    var assignmentRules: [BackendAssignmentRule]?
     var transactions: [BackendTransaction]
     var recurringTransactionIDs: [String]
     var lastSuccessfulSyncAt: Date?
@@ -192,6 +223,7 @@ private struct BackendSnapshotResponse: Decodable {
             institutions: institutions.map(\.institution),
             accounts: accounts.map(\.account),
             categories: categories.map(\.category),
+            assignmentRules: assignmentRules?.map(\.rule) ?? [],
             transactions: transactions.map(\.transaction),
             recurringTransactionIDs: Set(recurringTransactionIDs),
             lastSuccessfulSyncAt: lastSuccessfulSyncAt
@@ -202,6 +234,7 @@ private struct BackendSnapshotResponse: Decodable {
         case institutions
         case accounts
         case categories
+        case assignmentRules = "assignment_rules"
         case transactions
         case recurringTransactionIDs = "recurring_transaction_ids"
         case lastSuccessfulSyncAt = "last_successful_sync_at"
@@ -254,6 +287,36 @@ private struct UpsertCategoryRequest: Encodable {
         case name
         case monthlyLimitMinorUnits = "monthly_limit_minor_units"
     }
+}
+
+private struct UpsertAssignmentRuleRequest: Encodable {
+    var id: String
+    var name: String
+    var merchantContains: String
+    var matchField: String
+    var matchOperator: String
+    var amountFilter: String
+    var accountID: String?
+    var categoryID: String
+    var isEnabled: Bool
+    var applyToExisting: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case merchantContains = "merchant_contains"
+        case matchField = "match_field"
+        case matchOperator = "match_operator"
+        case amountFilter = "amount_filter"
+        case accountID = "account_id"
+        case categoryID = "category_id"
+        case isEnabled = "is_enabled"
+        case applyToExisting = "apply_to_existing"
+    }
+}
+
+private struct DeleteAssignmentRuleRequest: Encodable {
+    var id: String
 }
 
 private struct DeleteCategoryRequest: Encodable {
@@ -363,10 +426,50 @@ private struct BackendCategory: Decodable {
     }
 }
 
+private struct BackendAssignmentRule: Decodable {
+    var id: String
+    var name: String
+    var merchantContains: String
+    var matchField: String?
+    var matchOperator: String?
+    var amountFilter: String?
+    var accountID: String?
+    var categoryID: String
+    var isEnabled: Bool?
+
+    var rule: BudgetAssignmentRule {
+        BudgetAssignmentRule(
+            id: id,
+            name: name,
+            merchantContains: merchantContains,
+            categoryID: categoryID,
+            isEnabled: isEnabled ?? true,
+            matchField: matchField.flatMap(AssignmentRuleMatchField.init(rawValue:)) ?? .merchantName,
+            matchOperator: matchOperator.flatMap(AssignmentRuleTextOperator.init(rawValue:)) ?? .contains,
+            amountFilter: amountFilter.flatMap(AssignmentRuleAmountFilter.init(rawValue:)) ?? .any,
+            accountID: accountID
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case merchantContains = "merchant_contains"
+        case matchField = "match_field"
+        case matchOperator = "match_operator"
+        case amountFilter = "amount_filter"
+        case accountID = "account_id"
+        case categoryID = "category_id"
+        case isEnabled = "is_enabled"
+    }
+}
+
 private struct BackendTransaction: Decodable {
     var id: String
     var accountID: String
     var categoryID: String?
+    var categoryAssignmentSource: String?
+    var categoryAssignmentRuleID: String?
     var postedAt: Date
     var occurredAt: Date?
     var merchantName: String
@@ -377,6 +480,8 @@ private struct BackendTransaction: Decodable {
             id: id,
             accountID: accountID,
             categoryID: categoryID,
+            categoryAssignmentSource: categoryAssignmentSource.flatMap(CategoryAssignmentSource.init(rawValue:)),
+            categoryAssignmentRuleID: categoryAssignmentRuleID,
             postedAt: postedAt,
             occurredAt: occurredAt,
             merchantName: merchantName,
@@ -388,6 +493,8 @@ private struct BackendTransaction: Decodable {
         case id
         case accountID = "account_id"
         case categoryID = "category_id"
+        case categoryAssignmentSource = "category_assignment_source"
+        case categoryAssignmentRuleID = "category_assignment_rule_id"
         case postedAt = "posted_at"
         case occurredAt = "occurred_at"
         case merchantName = "merchant_name"

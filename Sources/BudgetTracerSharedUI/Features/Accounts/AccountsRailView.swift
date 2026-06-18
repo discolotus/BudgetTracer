@@ -8,7 +8,11 @@ import SwiftUI
 struct AccountsRailView: View {
     var snapshot: BudgetSnapshot
     var connectionState: PlaidConnectionState
+    var plaidLinkState: PlaidLinkState = .idle
     var accountOverrides: [FinancialAccount.ID: AccountOverride] = [:]
+    var dataSourceLabel = "Demo data"
+    var selectedAccountID: FinancialAccount.ID?
+    var selectAccount: (FinancialAccount.ID) -> Void = { _ in }
     var setAccountKind: (FinancialAccount.ID, AccountKind) -> Void = { _, _ in }
     var setAccountAvailableCash: (FinancialAccount.ID, Bool) -> Void = { _, _ in }
     var resetAccountOverride: (FinancialAccount.ID) -> Void = { _ in }
@@ -73,7 +77,7 @@ struct AccountsRailView: View {
                 .font(.caption)
                 .foregroundStyle(BudgetTracerStyle.inkMuted)
             } else {
-                Text("Demo data")
+                Text(dataSourceLabel)
                     .font(.caption)
                     .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
@@ -107,8 +111,10 @@ struct AccountsRailView: View {
                 ForEach(group.accounts, id: \.id) { account in
                     AccountRailRow(
                         account: account,
+                        isSelected: account.id == selectedAccountID,
                         includesInAvailableCash: snapshot.includesInAvailableCash(account),
                         hasOverride: accountOverrides[account.id] != nil,
+                        select: { selectAccount(account.id) },
                         setAccountKind: setAccountKind,
                         setAccountAvailableCash: setAccountAvailableCash,
                         resetAccountOverride: resetAccountOverride
@@ -121,6 +127,26 @@ struct AccountsRailView: View {
     private var footer: some View {
         VStack(spacing: 10) {
             ThemeRowDivider()
+
+            if let status = AccountsRailPlaidStatus.status(for: plaidLinkState) {
+                HStack(spacing: 6) {
+                    if status.showsProgress {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else if let systemImage = status.systemImage {
+                        Image(systemName: systemImage)
+                            .font(.caption)
+                    }
+
+                    Text(status.message)
+                        .font(.caption)
+                        .foregroundStyle(status.color)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+            }
 
             Button(action: connect) {
                 Label("Connect account", systemImage: "plus")
@@ -181,10 +207,60 @@ struct AccountsRailView: View {
     }
 }
 
+enum AccountsRailPlaidStatus {
+    struct Status {
+        var message: String
+        var color: Color
+        var systemImage: String?
+        var showsProgress = false
+    }
+
+    static func status(for plaidLinkState: PlaidLinkState) -> Status? {
+        switch plaidLinkState {
+        case .idle:
+            return nil
+        case .preparing:
+            return Status(
+                message: "Preparing Plaid Link...",
+                color: BudgetTracerStyle.inkMuted,
+                systemImage: nil,
+                showsProgress: true
+            )
+        case .ready:
+            return Status(
+                message: "Plaid Link is ready.",
+                color: BudgetTracerStyle.inkMuted,
+                systemImage: "link"
+            )
+        case .exchanging:
+            return Status(
+                message: "Connecting account...",
+                color: BudgetTracerStyle.inkMuted,
+                systemImage: nil,
+                showsProgress: true
+            )
+        case .succeeded:
+            return Status(
+                message: "Account connected. Balances are syncing.",
+                color: BudgetTracerStyle.positive,
+                systemImage: "checkmark.circle"
+            )
+        case .failed(let message):
+            return Status(
+                message: "Connection failed: \(message)",
+                color: BudgetTracerStyle.caution,
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+    }
+}
+
 private struct AccountRailRow: View {
     var account: FinancialAccount
+    var isSelected: Bool
     var includesInAvailableCash: Bool
     var hasOverride: Bool
+    var select: () -> Void
     var setAccountKind: (FinancialAccount.ID, AccountKind) -> Void
     var setAccountAvailableCash: (FinancialAccount.ID, Bool) -> Void
     var resetAccountOverride: (FinancialAccount.ID) -> Void
@@ -192,40 +268,25 @@ private struct AccountRailRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: account.kind.iconName)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(BudgetTracerStyle.accent)
-                .frame(width: 26, height: 26)
-                .background(BudgetTracerStyle.accentSoft, in: Circle())
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(account.name)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.ink)
-                    .lineLimit(1)
-                Text(account.currentBalance.formatted)
-                    .font(.caption)
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
-                    .monospacedDigit()
-            }
-
-            Spacer(minLength: 4)
-
-            if hasOverride {
-                Circle()
-                    .fill(BudgetTracerStyle.accent.opacity(0.6))
-                    .frame(width: 5, height: 5)
-                    .help("Classification customized")
-            }
+        Button(action: select) {
+            rowContent
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    rowBackground,
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
+                .overlay(alignment: .leading) {
+                    if isSelected {
+                        Capsule(style: .continuous)
+                            .fill(BudgetTracerStyle.accent)
+                            .frame(width: 3)
+                            .padding(.vertical, 7)
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            isHovering ? BudgetTracerStyle.surfaceSunken : Color.clear,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 isHovering = hovering
@@ -249,7 +310,62 @@ private struct AccountRailRow: View {
                 }
             }
         }
-        .help("Right-click to reclassify")
+        .onDrag {
+            AccountDragPayload.provider(accountID: account.id, suggestedName: account.name)
+        } preview: {
+            HStack(spacing: 8) {
+                Image(systemName: account.kind.iconName)
+                Text(account.name)
+            }
+            .font(.caption.weight(.medium))
+            .padding(8)
+            .background(BudgetTracerStyle.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .help("Open transactions. Right-click to reclassify.")
+        .accessibilityLabel("\(account.name), \(account.currentBalance.formatted)")
+        .accessibilityHint("Opens transactions for this account")
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 9) {
+            Image(systemName: account.kind.iconName)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(BudgetTracerStyle.accent)
+                .frame(width: 26, height: 26)
+                .background(isSelected ? BudgetTracerStyle.surface : BudgetTracerStyle.accentSoft, in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(account.name)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .lineLimit(1)
+                Text(account.currentBalance.formatted)
+                    .font(.caption)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 4)
+
+            if hasOverride {
+                Circle()
+                    .fill(BudgetTracerStyle.accent.opacity(0.6))
+                    .frame(width: 5, height: 5)
+                    .help("Classification customized")
+            }
+        }
+    }
+
+    private var rowBackground: Color {
+        if isSelected {
+            return BudgetTracerStyle.accentSoft
+        }
+
+        if isHovering {
+            return BudgetTracerStyle.surfaceSunken
+        }
+
+        return Color.clear
     }
 
     private var kindBinding: Binding<AccountKind> {

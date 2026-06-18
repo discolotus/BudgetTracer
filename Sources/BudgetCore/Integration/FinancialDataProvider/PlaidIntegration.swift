@@ -23,6 +23,8 @@ public protocol FinancialDataProvider: Sendable {
     func createSandboxPlaidItem(institutionID: String?) async throws -> BudgetSnapshot
     func setRegularMonthly(transactionID: BudgetTransaction.ID, isRegularMonthly: Bool) async throws -> BudgetSnapshot
     func setCategory(transactionID: BudgetTransaction.ID, categoryID: BudgetCategory.ID?) async throws -> BudgetSnapshot
+    func saveAssignmentRule(_ rule: BudgetAssignmentRule, applyToExisting: Bool) async throws -> BudgetSnapshot
+    func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot
     func setAccountOverride(accountID: FinancialAccount.ID, override: AccountOverride?) async throws -> BudgetSnapshot
     func saveCategory(_ category: BudgetCategory) async throws -> BudgetSnapshot
     func deleteCategory(id: BudgetCategory.ID) async throws -> BudgetSnapshot
@@ -55,8 +57,31 @@ public extension FinancialDataProvider {
 
             var updated = transaction
             updated.categoryID = categoryID
+            updated.categoryAssignmentSource = .manual
+            updated.categoryAssignmentRuleID = nil
             return updated
         }
+        return snapshot
+    }
+
+    func saveAssignmentRule(_ rule: BudgetAssignmentRule, applyToExisting: Bool) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        if let index = snapshot.assignmentRules.firstIndex(where: { $0.id == rule.id }) {
+            snapshot.assignmentRules[index] = rule
+        } else {
+            snapshot.assignmentRules.append(rule)
+        }
+
+        if applyToExisting {
+            snapshot = BudgetAssignmentRuleEngine.applying(rule, to: snapshot)
+        }
+
+        return snapshot
+    }
+
+    func deleteAssignmentRule(id: BudgetAssignmentRule.ID) async throws -> BudgetSnapshot {
+        var snapshot = try await fetchBudgetSnapshot()
+        snapshot.assignmentRules.removeAll { $0.id == id }
         return snapshot
     }
 

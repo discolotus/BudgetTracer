@@ -24,6 +24,12 @@ targets:
       - path: Apps/BudgetTraceriOS
     info:
       path: Apps/BudgetTraceriOS/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        BudgetTracerDataMode: secure-local
+        BudgetTracerPlaidRelayURL: https://api.budgettracer.app
+        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.budgettracer.ios
@@ -32,6 +38,9 @@ targets:
         INFOPLIST_FILE: Apps/BudgetTraceriOS/Info.plist
         CODE_SIGN_ENTITLEMENTS: Apps/BudgetTraceriOS/BudgetTracer.entitlements
         CODE_SIGNING_ALLOWED: "NO"
+      configs:
+        Debug:
+          ENABLE_DEBUG_DYLIB: "YES"
     dependencies:
       - package: BudgetTracerPackage
         product: BudgetCore
@@ -44,6 +53,11 @@ targets:
       - path: Apps/BudgetTracerMac
     info:
       path: Apps/BudgetTracerMac/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        BudgetTracerDataMode: secure-local
+        BudgetTracerPlaidRelayURL: https://api.budgettracer.app
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.budgettracer.mac
@@ -51,6 +65,9 @@ targets:
         INFOPLIST_FILE: Apps/BudgetTracerMac/Info.plist
         CODE_SIGN_ENTITLEMENTS: Apps/BudgetTracerMac/BudgetTracer.entitlements
         CODE_SIGNING_ALLOWED: "NO"
+      configs:
+        Debug:
+          ENABLE_DEBUG_DYLIB: "YES"
     dependencies:
       - package: BudgetTracerPackage
         product: BudgetCore
@@ -69,6 +86,32 @@ schemes:
         BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
     archive:
       config: Release
+  BudgetTracer iOS Demo:
+    build:
+      targets:
+        BudgetTraceriOS: all
+    run:
+      config: Debug
+      environmentVariables:
+        BUDGETTRACER_DATA_MODE: demo
+        BUDGETTRACER_USE_BACKEND: "0"
+        BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
+    archive:
+      config: Release
+  BudgetTracer iOS Secure Local Dev:
+    build:
+      targets:
+        BudgetTraceriOS: all
+    run:
+      config: Debug
+      environmentVariables:
+        BUDGETTRACER_DATA_MODE: secure-local
+        BUDGETTRACER_DEV_SECRET_STORE: file
+        BUDGETTRACER_DISABLE_APP_LOCK: "1"
+        BUDGETTRACER_PLAID_RELAY_URL: https://budgettracer-plaid-relay-dev.tanner-m-leo.workers.dev
+        BUDGETTRACER_APPLE_IDENTITY_TOKEN: ""
+    archive:
+      config: Release
   BudgetTracer macOS:
     build:
       targets:
@@ -79,5 +122,31 @@ schemes:
         BUDGETTRACER_DATA_MODE: demo
         BUDGETTRACER_USE_BACKEND: "0"
         BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
+    archive:
+      config: Release
+  BudgetTracer macOS Demo:
+    build:
+      targets:
+        BudgetTracerMacApp: all
+    run:
+      config: Debug
+      environmentVariables:
+        BUDGETTRACER_DATA_MODE: demo
+        BUDGETTRACER_USE_BACKEND: "0"
+        BUDGETTRACER_BACKEND_URL: http://127.0.0.1:8790
+    archive:
+      config: Release
+  BudgetTracer macOS Secure Local Dev:
+    build:
+      targets:
+        BudgetTracerMacApp: all
+    run:
+      config: Debug
+      environmentVariables:
+        BUDGETTRACER_DATA_MODE: secure-local
+        BUDGETTRACER_DEV_SECRET_STORE: file
+        BUDGETTRACER_DISABLE_APP_LOCK: "1"
+        BUDGETTRACER_PLAID_RELAY_URL: https://budgettracer-plaid-relay-dev.tanner-m-leo.workers.dev
+        BUDGETTRACER_APPLE_IDENTITY_TOKEN: ""
     archive:
       config: Release

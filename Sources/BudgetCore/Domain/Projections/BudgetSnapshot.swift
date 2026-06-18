@@ -4,6 +4,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
     public var institutions: [Institution]
     public var accounts: [FinancialAccount]
     public var categories: [BudgetCategory]
+    public var assignmentRules: [BudgetAssignmentRule]
     public var transactions: [BudgetTransaction]
     public var recurringTransactionIDs: Set<BudgetTransaction.ID>
     public var accountOverrides: [FinancialAccount.ID: AccountOverride]
@@ -13,6 +14,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
         institutions: [Institution],
         accounts: [FinancialAccount],
         categories: [BudgetCategory],
+        assignmentRules: [BudgetAssignmentRule] = [],
         transactions: [BudgetTransaction],
         recurringTransactionIDs: Set<BudgetTransaction.ID> = [],
         accountOverrides: [FinancialAccount.ID: AccountOverride] = [:],
@@ -21,6 +23,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
         self.institutions = institutions
         self.accounts = accounts
         self.categories = categories
+        self.assignmentRules = assignmentRules
         self.transactions = transactions
         self.recurringTransactionIDs = recurringTransactionIDs
         self.accountOverrides = accountOverrides
@@ -43,7 +46,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
     public var creditDebt: Money {
         accounts
-            .filter { $0.kind == .creditCard }
+            .filter { isCreditCardDebtAccount($0, override: accountOverrides[$0.id]) }
             .map(\.currentBalance)
             .reduce(Money(minorUnits: 0), +)
     }
@@ -89,9 +92,13 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
     public func applying(accountOverrides overrides: [FinancialAccount.ID: AccountOverride]) -> BudgetSnapshot {
         var snapshot = self
-        snapshot.accountOverrides = overrides
+        var migratedOverrides: [FinancialAccount.ID: AccountOverride] = [:]
+        for account in accounts {
+            migratedOverrides[account.id] = Self.migratedAccountOverride(overrides[account.id], for: account)
+        }
+        snapshot.accountOverrides = migratedOverrides
         snapshot.accounts = accounts.map { account in
-            guard let kind = overrides[account.id]?.kind else {
+            guard let kind = migratedOverrides[account.id]?.kind else {
                 return account
             }
 
@@ -104,6 +111,30 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
     public func includesInAvailableCash(_ account: FinancialAccount) -> Bool {
         isAvailableCashAccount(account, override: accountOverrides[account.id])
+    }
+
+    public func includesInCreditCardDebt(_ account: FinancialAccount) -> Bool {
+        isCreditCardDebtAccount(account, override: accountOverrides[account.id])
+    }
+
+    private static func migratedAccountOverride(
+        _ override: AccountOverride?,
+        for account: FinancialAccount
+    ) -> AccountOverride? {
+        guard var override else {
+            return nil
+        }
+
+        if account.kind == .creditCard,
+           override.kind == .other,
+           override.includesInAvailableCash == false,
+           override.includesInCreditCardDebt == nil {
+            override.kind = nil
+            override.includesInAvailableCash = nil
+            override.includesInCreditCardDebt = false
+        }
+
+        return override
     }
 
     public func normalizedMonthlyCashFlow(
@@ -721,7 +752,9 @@ public struct BudgetSnapshot: Hashable, Sendable {
     ) {
         switch account.map({ effectiveKind(for: $0) }) {
         case .creditCard:
-            creditDebtDelta += -transaction.amount.minorUnits
+            if isCashFlowCreditCardAccount(account) {
+                creditDebtDelta += -transaction.amount.minorUnits
+            }
         case .checking, .savings:
             if isCashFlowCashAccount(account) {
                 cashDelta += transaction.amount.minorUnits
@@ -755,7 +788,7 @@ public struct BudgetSnapshot: Hashable, Sendable {
 
         switch account.map({ effectiveKind(for: $0) }) {
         case .creditCard:
-            return true
+            return isCashFlowCreditCardAccount(account)
         case .checking, .savings, .investment, .loan, .other:
             return false
         case .none:
@@ -818,6 +851,14 @@ public struct BudgetSnapshot: Hashable, Sendable {
         return isAvailableCashAccount(account)
     }
 
+    private func isCashFlowCreditCardAccount(_ account: FinancialAccount?) -> Bool {
+        guard let account else {
+            return false
+        }
+
+        return isCreditCardDebtAccount(account, override: accountOverrides[account.id])
+    }
+
     private func isAvailableCashAccount(_ account: FinancialAccount, override: AccountOverride? = nil) -> Bool {
         if override?.includesInAvailableCash == false {
             return false
@@ -840,6 +881,14 @@ public struct BudgetSnapshot: Hashable, Sendable {
         return subtype != "money market" && subtype != "cd"
     }
 
+    private func isCreditCardDebtAccount(_ account: FinancialAccount, override: AccountOverride? = nil) -> Bool {
+        if override?.includesInCreditCardDebt == false {
+            return false
+        }
+
+        return (override?.kind ?? account.kind) == .creditCard
+    }
+
     private func effectiveKind(for account: FinancialAccount) -> AccountKind {
         accountOverrides[account.id]?.kind ?? account.kind
     }
@@ -857,7 +906,9 @@ public struct BudgetSnapshot: Hashable, Sendable {
     ) {
         switch account.map({ effectiveKind(for: $0) }) {
         case .creditCard:
-            distribute(-transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCreditDebtMinorUnits)
+            if isCashFlowCreditCardAccount(account) {
+                distribute(-transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCreditDebtMinorUnits)
+            }
         case .checking, .savings:
             if isCashFlowCashAccount(account) {
                 distribute(transaction.amount.minorUnits, acrossOffsets: offsets, in: &dailyCashMinorUnits)

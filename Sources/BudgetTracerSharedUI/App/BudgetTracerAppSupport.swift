@@ -11,17 +11,22 @@ public enum BudgetTracerAppWorkspaceFactory {
     @MainActor
     public static func make(environment: [String: String] = ProcessInfo.processInfo.environment) -> BudgetWorkspace {
         if SecureLocalAppServices.usesSecureLocalMode(environment: environment) {
+            let requiresAppLock = !disablesAppLock(environment: environment)
             do {
                 return BudgetWorkspace(
+                    snapshot: emptySecureLocalSnapshot,
                     connectionState: .connecting,
                     dataProvider: try SecureLocalAppServices.makeFinancialDataProvider(environment: environment),
-                    requiresAppLock: true
+                    requiresAppLock: requiresAppLock,
+                    dataSourceLabel: "Secure local"
                 )
             } catch {
                 return BudgetWorkspace(
+                    snapshot: emptySecureLocalSnapshot,
                     connectionState: .failed(message: error.localizedDescription),
                     dataProvider: PlaidDataProvider(),
-                    requiresAppLock: true
+                    requiresAppLock: requiresAppLock,
+                    dataSourceLabel: "Secure local"
                 )
             }
         }
@@ -29,13 +34,15 @@ public enum BudgetTracerAppWorkspaceFactory {
         if usesBackend(environment: environment) {
             return BudgetWorkspace(
                 connectionState: .connecting,
-                dataProvider: BackendFinancialDataProvider(baseURL: backendURL(environment: environment))
+                dataProvider: BackendFinancialDataProvider(baseURL: backendURL(environment: environment)),
+                dataSourceLabel: "Backend"
             )
         }
 
         return BudgetWorkspace(
             connectionState: .connected(institutionCount: SampleBudgetData.snapshot.institutions.count, lastSyncedAt: nil),
-            dataProvider: SampleFinancialDataProvider()
+            dataProvider: SampleFinancialDataProvider(),
+            dataSourceLabel: "Demo data"
         )
     }
 
@@ -43,9 +50,26 @@ public enum BudgetTracerAppWorkspaceFactory {
         environment["BUDGETTRACER_USE_BACKEND"] == "1"
     }
 
+    public static func disablesAppLock(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        guard let value = environment["BUDGETTRACER_DISABLE_APP_LOCK"]?.lowercased() else {
+            return false
+        }
+
+        return ["1", "true", "yes"].contains(value)
+    }
+
     public static func backendURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
         environment["BUDGETTRACER_BACKEND_URL"].flatMap(URL.init(string:))
             ?? URL(string: "http://127.0.0.1:8790")!
+    }
+
+    private static var emptySecureLocalSnapshot: BudgetSnapshot {
+        BudgetSnapshot(
+            institutions: [],
+            accounts: [],
+            categories: BudgetCategory.defaultSeed,
+            transactions: []
+        )
     }
 }
 

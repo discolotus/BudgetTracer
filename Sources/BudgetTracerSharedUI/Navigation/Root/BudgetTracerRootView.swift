@@ -6,6 +6,7 @@ public struct BudgetTracerRootView: View {
     @StateObject private var appLockController: BudgetAppLockController
     @Environment(\.scenePhase) private var scenePhase
     @SceneStorage("BudgetTracer.selectedSection") private var selectedSectionID = BudgetSection.overview.rawValue
+    @SceneStorage("BudgetTracer.transactions.selectedAccountID") private var selectedTransactionAccountID = ""
     @State private var isShowingSettings = false
     @State private var plaidLinkToken: String?
 
@@ -113,7 +114,14 @@ public struct BudgetTracerRootView: View {
             AccountsRailView(
                 snapshot: workspace.displaySnapshot,
                 connectionState: workspace.connectionState,
+                plaidLinkState: workspace.plaidLinkState,
                 accountOverrides: workspace.accountOverrides,
+                dataSourceLabel: workspace.dataSourceLabel,
+                selectedAccountID: visibleAccountSelectionID,
+                selectAccount: { accountID in
+                    selectedTransactionAccountID = accountID
+                    selectedSectionID = BudgetSection.transactions.rawValue
+                },
                 setAccountKind: { accountID, kind in
                     workspace.setAccount(accountID, kind: kind)
                 },
@@ -126,7 +134,7 @@ public struct BudgetTracerRootView: View {
                 connect: {
                     Task { plaidLinkToken = await workspace.preparePlaidLink() }
                 },
-                connectIsDisabled: isRefreshing
+                connectIsDisabled: isPlaidLinkActionInProgress
             )
             .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
         } detail: {
@@ -178,8 +186,25 @@ public struct BudgetTracerRootView: View {
         return false
     }
 
+    private var isPlaidLinkActionInProgress: Bool {
+        switch workspace.plaidLinkState {
+        case .preparing, .exchanging:
+            return true
+        case .idle, .ready, .succeeded, .failed:
+            return false
+        }
+    }
+
     private var selectedSection: BudgetSection {
         BudgetSection(rawValue: selectedSectionID) ?? .overview
+    }
+
+    private var transactionAccountFilterID: FinancialAccount.ID? {
+        selectedTransactionAccountID.isEmpty ? nil : selectedTransactionAccountID
+    }
+
+    private var visibleAccountSelectionID: FinancialAccount.ID? {
+        selectedSection == .transactions ? transactionAccountFilterID : nil
     }
 
     private func refreshWorkspace(forceSync: Bool = true) {
@@ -255,6 +280,18 @@ public struct BudgetTracerRootView: View {
                 },
                 setCategorySeries: { transactionIDs, categoryID in
                     workspace.setCategory(transactionIDs, categoryID: categoryID)
+                },
+                setAccountKind: { accountID, kind in
+                    workspace.setAccount(accountID, kind: kind)
+                },
+                setAccountAvailableCash: { accountID, includesInAvailableCash in
+                    workspace.setAccount(accountID, includesInAvailableCash: includesInAvailableCash)
+                },
+                setAccountOverride: { accountID, override in
+                    workspace.setAccount(accountID, override: override)
+                },
+                saveAssignmentRule: { rule, applyToExisting in
+                    workspace.saveAssignmentRule(rule, applyToExisting: applyToExisting)
                 }
             )
         case .accounts:
@@ -274,11 +311,16 @@ public struct BudgetTracerRootView: View {
         case .transactions:
             TransactionsView(
                 snapshot: workspace.displaySnapshot,
+                selectedAccountID: transactionAccountFilterID,
+                clearSelectedAccount: { selectedTransactionAccountID = "" },
                 setRecurring: { transactionID, isRecurring in
                     workspace.setRecurringForSeries(containing: transactionID, isRecurring: isRecurring)
                 },
                 setCategory: { transactionID, categoryID in
                     workspace.setCategory(transactionID, categoryID: categoryID)
+                },
+                saveAssignmentRule: { rule, applyToExisting in
+                    workspace.saveAssignmentRule(rule, applyToExisting: applyToExisting)
                 }
             )
         case .budgets:

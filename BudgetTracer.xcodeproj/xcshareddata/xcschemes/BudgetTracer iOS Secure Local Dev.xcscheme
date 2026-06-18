@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "605429106843E3CBB26D182C"
+               BlueprintIdentifier = "1646479A210F5E597EDD8D1E"
                BuildableName = "BudgetTracer.app"
-               BlueprintName = "BudgetTracerMacApp"
+               BlueprintName = "BudgetTraceriOS"
                ReferencedContainer = "container:BudgetTracer.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -30,9 +30,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "605429106843E3CBB26D182C"
+            BlueprintIdentifier = "1646479A210F5E597EDD8D1E"
             BuildableName = "BudgetTracer.app"
-            BlueprintName = "BudgetTracerMacApp"
+            BlueprintName = "BudgetTraceriOS"
             ReferencedContainer = "container:BudgetTracer.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -53,26 +53,36 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "605429106843E3CBB26D182C"
+            BlueprintIdentifier = "1646479A210F5E597EDD8D1E"
             BuildableName = "BudgetTracer.app"
-            BlueprintName = "BudgetTracerMacApp"
+            BlueprintName = "BudgetTraceriOS"
             ReferencedContainer = "container:BudgetTracer.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "BUDGETTRACER_BACKEND_URL"
-            value = "http://127.0.0.1:8790"
+            key = "BUDGETTRACER_APPLE_IDENTITY_TOKEN"
+            value = ""
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "BUDGETTRACER_DATA_MODE"
-            value = "demo"
+            value = "secure-local"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
-            key = "BUDGETTRACER_USE_BACKEND"
-            value = "0"
+            key = "BUDGETTRACER_DEV_SECRET_STORE"
+            value = "file"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "BUDGETTRACER_DISABLE_APP_LOCK"
+            value = "1"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "BUDGETTRACER_PLAID_RELAY_URL"
+            value = "https://budgettracer-plaid-relay-dev.tanner-m-leo.workers.dev"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
@@ -87,9 +97,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "605429106843E3CBB26D182C"
+            BlueprintIdentifier = "1646479A210F5E597EDD8D1E"
             BuildableName = "BudgetTracer.app"
-            BlueprintName = "BudgetTracerMacApp"
+            BlueprintName = "BudgetTraceriOS"
             ReferencedContainer = "container:BudgetTracer.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

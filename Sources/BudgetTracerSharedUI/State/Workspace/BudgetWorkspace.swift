@@ -19,6 +19,7 @@ public final class BudgetWorkspace: ObservableObject {
     @Published public private(set) var accountOverrides: [FinancialAccount.ID: AccountOverride]
 
     public let requiresAppLock: Bool
+    public let dataSourceLabel: String
 
     private let dataProvider: FinancialDataProvider
     private let userDefaults: UserDefaults
@@ -30,7 +31,8 @@ public final class BudgetWorkspace: ObservableObject {
         plaidLinkState: PlaidLinkState = .idle,
         dataProvider: FinancialDataProvider = PlaidDataProvider(),
         userDefaults: UserDefaults = .standard,
-        requiresAppLock: Bool = false
+        requiresAppLock: Bool = false,
+        dataSourceLabel: String = "Demo data"
     ) {
         self.snapshot = snapshot
         self.connectionState = connectionState
@@ -38,6 +40,7 @@ public final class BudgetWorkspace: ObservableObject {
         self.dataProvider = dataProvider
         self.userDefaults = userDefaults
         self.requiresAppLock = requiresAppLock
+        self.dataSourceLabel = dataSourceLabel
         self.accountOverrides = dataProvider.storesAccountOverrides
             ? snapshot.accountOverrides
             : Self.loadAccountOverrides(from: userDefaults)
@@ -49,13 +52,26 @@ public final class BudgetWorkspace: ObservableObject {
 
     public func refresh(forceSync: Bool = false) async {
         connectionState = .connecting
+        let freshnessPolicy: BudgetSnapshotFreshnessPolicy = forceSync ? .forceSync : .syncIfStale(maxAge: 300)
+        var didLoadCachedSnapshot = false
 
         do {
-            let freshnessPolicy: BudgetSnapshotFreshnessPolicy = forceSync ? .forceSync : .syncIfStale(maxAge: 300)
-            applySnapshot(try await dataProvider.fetchBudgetSnapshot(freshnessPolicy: freshnessPolicy))
+            applySnapshot(try await dataProvider.fetchBudgetSnapshot())
+            didLoadCachedSnapshot = true
             markConnected()
         } catch {
             connectionState = .failed(message: error.localizedDescription)
+        }
+
+        do {
+            applySnapshot(try await dataProvider.fetchBudgetSnapshot(freshnessPolicy: freshnessPolicy))
+            markConnected()
+        } catch {
+            if forceSync || !didLoadCachedSnapshot {
+                connectionState = .failed(message: error.localizedDescription)
+            } else {
+                markConnected()
+            }
         }
     }
 
@@ -159,6 +175,8 @@ public final class BudgetWorkspace: ObservableObject {
 
             var updated = transaction
             updated.categoryID = categoryID
+            updated.categoryAssignmentSource = .manual
+            updated.categoryAssignmentRuleID = nil
             return updated
         }
 
@@ -184,6 +202,8 @@ public final class BudgetWorkspace: ObservableObject {
 
             var updated = transaction
             updated.categoryID = categoryID
+            updated.categoryAssignmentSource = .manual
+            updated.categoryAssignmentRuleID = nil
             return updated
         }
 
@@ -193,6 +213,56 @@ public final class BudgetWorkspace: ObservableObject {
                     try await dataProvider.setCategory(
                         transactionID: transactionID,
                         categoryID: categoryID
+                    )
+                )
+                markConnected()
+            } catch {
+                connectionState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    public func createAssignmentRule(
+        from transaction: BudgetTransaction,
+        categoryID: BudgetCategory.ID,
+        applyToExisting: Bool = true
+    ) {
+        let merchant = transaction.merchantName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !merchant.isEmpty else {
+            return
+        }
+
+        let categoryName = snapshot.categories.first { $0.id == categoryID }?.name ?? "Budget"
+        let rule = snapshot.assignmentRules.first { existing in
+            existing.merchantContains.caseInsensitiveCompare(merchant) == .orderedSame
+                && existing.categoryID == categoryID
+        } ?? BudgetAssignmentRule(
+            id: UUID().uuidString,
+            name: "\(merchant) -> \(categoryName)",
+            merchantContains: merchant,
+            categoryID: categoryID
+        )
+
+        saveAssignmentRule(rule, applyToExisting: applyToExisting)
+    }
+
+    public func saveAssignmentRule(_ rule: BudgetAssignmentRule, applyToExisting: Bool = true) {
+        if let index = snapshot.assignmentRules.firstIndex(where: { $0.id == rule.id }) {
+            snapshot.assignmentRules[index] = rule
+        } else {
+            snapshot.assignmentRules.append(rule)
+        }
+
+        if applyToExisting {
+            snapshot = BudgetAssignmentRuleEngine.applying(rule, to: snapshot)
+        }
+
+        Task {
+            do {
+                applySnapshot(
+                    try await dataProvider.saveAssignmentRule(
+                        rule,
+                        applyToExisting: applyToExisting
                     )
                 )
                 markConnected()
@@ -228,6 +298,7 @@ public final class BudgetWorkspace: ObservableObject {
 
     public func deleteCategory(_ categoryID: BudgetCategory.ID) {
         snapshot.categories.removeAll { $0.id == categoryID }
+        snapshot.assignmentRules.removeAll { $0.categoryID == categoryID }
         snapshot.transactions = snapshot.transactions.map { transaction in
             guard transaction.categoryID == categoryID else {
                 return transaction
@@ -235,6 +306,8 @@ public final class BudgetWorkspace: ObservableObject {
 
             var updated = transaction
             updated.categoryID = nil
+            updated.categoryAssignmentSource = nil
+            updated.categoryAssignmentRuleID = nil
             return updated
         }
 
@@ -256,12 +329,21 @@ public final class BudgetWorkspace: ObservableObject {
         } else {
             override.includesInAvailableCash = false
         }
+        if kind == .creditCard {
+            override.includesInCreditCardDebt = override.includesInCreditCardDebt ?? true
+        } else {
+            override.includesInCreditCardDebt = false
+        }
         setAccountOverride(accountID, override: override)
     }
 
     public func setAccount(_ accountID: FinancialAccount.ID, includesInAvailableCash: Bool) {
         var override = accountOverrides[accountID] ?? AccountOverride()
         override.includesInAvailableCash = includesInAvailableCash
+        setAccountOverride(accountID, override: override)
+    }
+
+    public func setAccount(_ accountID: FinancialAccount.ID, override: AccountOverride?) {
         setAccountOverride(accountID, override: override)
     }
 

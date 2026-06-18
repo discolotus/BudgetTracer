@@ -13,6 +13,13 @@ public final class BudgetRepository {
     public func migrate() throws {
         try database.execute(DatabaseSchema.sql)
         try addColumnIfMissing(table: "transactions", column: "occurred_at", definition: "TEXT")
+        try addColumnIfMissing(table: "transaction_annotations", column: "category_assignment_source", definition: "TEXT")
+        try addColumnIfMissing(table: "transaction_annotations", column: "category_assignment_rule_id", definition: "TEXT")
+        try addColumnIfMissing(table: "account_overrides", column: "includes_in_credit_card_debt", definition: "INTEGER")
+        try addColumnIfMissing(table: "assignment_rules", column: "match_field", definition: "TEXT NOT NULL DEFAULT 'merchantName'")
+        try addColumnIfMissing(table: "assignment_rules", column: "match_operator", definition: "TEXT NOT NULL DEFAULT 'contains'")
+        try addColumnIfMissing(table: "assignment_rules", column: "amount_filter", definition: "TEXT NOT NULL DEFAULT 'any'")
+        try addColumnIfMissing(table: "assignment_rules", column: "account_id", definition: "TEXT")
     }
 
     public func ensureUser(id: String) throws {
@@ -366,10 +373,15 @@ public final class BudgetRepository {
         let now = nowString()
         try database.run(
             """
-            INSERT INTO transaction_annotations(transaction_id, user_id, category_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO transaction_annotations(
+              transaction_id, user_id, category_id, category_assignment_source,
+              category_assignment_rule_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'manual', NULL, ?, ?)
             ON CONFLICT(transaction_id) DO UPDATE SET
               category_id = excluded.category_id,
+              category_assignment_source = 'manual',
+              category_assignment_rule_id = NULL,
               updated_at = excluded.updated_at
             """,
             bindings: [
@@ -382,8 +394,201 @@ public final class BudgetRepository {
         )
     }
 
+    public func upsertAssignmentRule(_ rule: BudgetAssignmentRule, userID: String) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO assignment_rules(
+              id, user_id, name, merchant_contains, match_field, match_operator,
+              amount_filter, account_id, category_id, is_enabled, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              merchant_contains = excluded.merchant_contains,
+              match_field = excluded.match_field,
+              match_operator = excluded.match_operator,
+              amount_filter = excluded.amount_filter,
+              account_id = excluded.account_id,
+              category_id = excluded.category_id,
+              is_enabled = excluded.is_enabled,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(rule.id),
+                .text(userID),
+                .text(rule.name),
+                .text(rule.merchantContains),
+                .text(rule.matchField.rawValue),
+                .text(rule.matchOperator.rawValue),
+                .text(rule.amountFilter.rawValue),
+                rule.accountID.map(SQLiteValue.text) ?? .null,
+                .text(rule.categoryID),
+                .bool(rule.isEnabled),
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    public func deleteAssignmentRule(id: BudgetAssignmentRule.ID, userID: String) throws {
+        try database.run(
+            "DELETE FROM assignment_rules WHERE id = ? AND user_id = ?",
+            bindings: [.text(id), .text(userID)]
+        )
+    }
+
+    public func assignmentRules(userID: String) throws -> [BudgetAssignmentRule] {
+        try database.query(
+            """
+            SELECT id, name, merchant_contains, match_field, match_operator,
+                   amount_filter, account_id, category_id, is_enabled
+            FROM assignment_rules
+            WHERE user_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            bindings: [.text(userID)]
+        ).map { row in
+            BudgetAssignmentRule(
+                id: try requiredString("id", row),
+                name: try requiredString("name", row),
+                merchantContains: try requiredString("merchant_contains", row),
+                categoryID: try requiredString("category_id", row),
+                isEnabled: row["is_enabled"]?.bool ?? true,
+                matchField: row["match_field"]?.string.flatMap(AssignmentRuleMatchField.init(rawValue:)) ?? .merchantName,
+                matchOperator: row["match_operator"]?.string.flatMap(AssignmentRuleTextOperator.init(rawValue:)) ?? .contains,
+                amountFilter: row["amount_filter"]?.string.flatMap(AssignmentRuleAmountFilter.init(rawValue:)) ?? .any,
+                accountID: row["account_id"]?.string
+            )
+        }
+    }
+
+    public func applyAssignmentRules(userID: String, ruleIDs: Set<BudgetAssignmentRule.ID>? = nil) throws {
+        let rules = try assignmentRules(userID: userID)
+            .filter { rule in rule.isEnabled && (ruleIDs?.contains(rule.id) ?? true) }
+
+        guard !rules.isEmpty else {
+            return
+        }
+
+        let rows = try database.query(
+            """
+            SELECT transactions.id, transactions.plaid_transaction_id, transactions.account_id,
+                   transactions.posted_date, transactions.occurred_at, transactions.merchant_name,
+                   transactions.amount_minor_units, transactions.iso_currency_code,
+                   transaction_annotations.category_id,
+                   transaction_annotations.category_assignment_source
+            FROM transactions
+            LEFT JOIN transaction_annotations ON transaction_annotations.transaction_id = transactions.id
+            WHERE transactions.user_id = ? AND transactions.removed_at IS NULL
+            """,
+            bindings: [.text(userID)]
+        )
+
+        for row in rows {
+            let currentCategoryID = row["category_id"]?.string
+            let currentSource = row["category_assignment_source"]?.string
+                .flatMap(CategoryAssignmentSource.init(rawValue:))
+
+            if isManualCategoryAssignment(categoryID: currentCategoryID, source: currentSource) {
+                continue
+            }
+
+            let transaction = BudgetTransaction(
+                id: try requiredString("plaid_transaction_id", row),
+                accountID: try requiredString("account_id", row),
+                categoryID: currentCategoryID,
+                categoryAssignmentSource: currentSource,
+                postedAt: DateCoding.day(from: try requiredString("posted_date", row)) ?? Date(timeIntervalSince1970: 0),
+                occurredAt: row["occurred_at"]?.string.flatMap { DateCoding.date(from: $0) },
+                merchantName: try requiredString("merchant_name", row),
+                amount: Money(
+                    minorUnits: try requiredInt64("amount_minor_units", row),
+                    currencyCode: row["iso_currency_code"]?.string ?? "USD"
+                )
+            )
+
+            guard let rule = rules.first(where: { $0.matches(transaction) }) else {
+                continue
+            }
+
+            try setRuleAssignedCategory(
+                transactionRowID: try requiredString("id", row),
+                categoryID: rule.categoryID,
+                ruleID: rule.id,
+                userID: userID
+            )
+        }
+    }
+
+    public func applyAutomaticCategoryAssignments(userID: String) throws {
+        try applyPlaidCategoryAssignments(userID: userID)
+        try applyAssignmentRules(userID: userID)
+    }
+
+    private func applyPlaidCategoryAssignments(userID: String) throws {
+        let categories = try budgetCategories(userID: userID)
+        guard !categories.isEmpty else {
+            return
+        }
+
+        let rows = try database.query(
+            """
+            SELECT transactions.id, transactions.merchant_name,
+                   transactions.amount_minor_units, transactions.iso_currency_code,
+                   transactions.personal_finance_category_primary,
+                   transactions.personal_finance_category_detailed,
+                   transaction_annotations.category_id,
+                   transaction_annotations.category_assignment_source
+            FROM transactions
+            LEFT JOIN transaction_annotations ON transaction_annotations.transaction_id = transactions.id
+            WHERE transactions.user_id = ? AND transactions.removed_at IS NULL
+            """,
+            bindings: [.text(userID)]
+        )
+
+        for row in rows {
+            let currentCategoryID = row["category_id"]?.string
+            let currentSource = row["category_assignment_source"]?.string
+                .flatMap(CategoryAssignmentSource.init(rawValue:))
+
+            if isManualCategoryAssignment(categoryID: currentCategoryID, source: currentSource) {
+                continue
+            }
+
+            let merchantName = try requiredString("merchant_name", row)
+            let amount = Money(
+                minorUnits: try requiredInt64("amount_minor_units", row),
+                currencyCode: row["iso_currency_code"]?.string ?? "USD"
+            )
+
+            guard let categoryID = PlaidCategoryBudgetClassifier.categoryID(
+                primary: row["personal_finance_category_primary"]?.string,
+                detailed: row["personal_finance_category_detailed"]?.string,
+                merchantName: merchantName,
+                amount: amount,
+                categories: categories
+            ) else {
+                continue
+            }
+
+            if currentCategoryID == categoryID && currentSource == .plaid {
+                continue
+            }
+
+            try setPlaidAssignedCategory(
+                transactionRowID: try requiredString("id", row),
+                categoryID: categoryID,
+                userID: userID
+            )
+        }
+    }
+
     public func setAccountOverride(accountID: String, override: AccountOverride?, userID: String) throws {
-        guard let override, override.kind != nil || override.includesInAvailableCash != nil else {
+        guard let override,
+              override.kind != nil
+                || override.includesInAvailableCash != nil
+                || override.includesInCreditCardDebt != nil else {
             try database.run(
                 "DELETE FROM account_overrides WHERE account_id = ? AND user_id = ?",
                 bindings: [.text(accountID), .text(userID)]
@@ -395,12 +600,14 @@ public final class BudgetRepository {
         try database.run(
             """
             INSERT INTO account_overrides(
-              account_id, user_id, kind, includes_in_available_cash, created_at, updated_at
+              account_id, user_id, kind, includes_in_available_cash,
+              includes_in_credit_card_debt, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id) DO UPDATE SET
               kind = excluded.kind,
               includes_in_available_cash = excluded.includes_in_available_cash,
+              includes_in_credit_card_debt = excluded.includes_in_credit_card_debt,
               updated_at = excluded.updated_at
             """,
             bindings: [
@@ -408,6 +615,7 @@ public final class BudgetRepository {
                 .text(userID),
                 override.kind.map { .text($0.rawValue) } ?? .null,
                 override.includesInAvailableCash.map(SQLiteValue.bool) ?? .null,
+                override.includesInCreditCardDebt.map(SQLiteValue.bool) ?? .null,
                 .text(now),
                 .text(now)
             ]
@@ -417,7 +625,7 @@ public final class BudgetRepository {
     public func accountOverrides(userID: String) throws -> [FinancialAccount.ID: AccountOverride] {
         let rows = try database.query(
             """
-            SELECT account_id, kind, includes_in_available_cash
+            SELECT account_id, kind, includes_in_available_cash, includes_in_credit_card_debt
             FROM account_overrides
             WHERE user_id = ?
             """,
@@ -428,9 +636,14 @@ public final class BudgetRepository {
             let accountID = try requiredString("account_id", row)
             let kind = row["kind"]?.string.flatMap(AccountKind.init(rawValue:))
             let includesInAvailableCash = row["includes_in_available_cash"]?.bool
+            let includesInCreditCardDebt = row["includes_in_credit_card_debt"]?.bool
             return (
                 accountID,
-                AccountOverride(kind: kind, includesInAvailableCash: includesInAvailableCash)
+                AccountOverride(
+                    kind: kind,
+                    includesInAvailableCash: includesInAvailableCash,
+                    includesInCreditCardDebt: includesInCreditCardDebt
+                )
             )
         }
 
@@ -611,29 +824,15 @@ public final class BudgetRepository {
             )
         }
 
-        let categories = try database.query(
-            """
-            SELECT id, name, monthly_limit_minor_units, iso_currency_code
-            FROM budget_categories
-            WHERE user_id = ?
-            ORDER BY name
-            """,
-            bindings: [.text(userID)]
-        ).map { row in
-            BudgetCategory(
-                id: try requiredString("id", row),
-                name: try requiredString("name", row),
-                monthlyLimit: row["monthly_limit_minor_units"]?.int64.map {
-                    Money(minorUnits: $0, currencyCode: row["iso_currency_code"]?.string ?? "USD")
-                }
-            )
-        }
+        let categories = try budgetCategories(userID: userID)
 
         let transactions = try database.query(
             """
             SELECT transactions.plaid_transaction_id, transactions.account_id,
                    transaction_annotations.category_id, posted_date, occurred_at, merchant_name,
-                   amount_minor_units, iso_currency_code
+                   amount_minor_units, iso_currency_code,
+                   transaction_annotations.category_assignment_source,
+                   transaction_annotations.category_assignment_rule_id
             FROM transactions
             LEFT JOIN transaction_annotations ON transaction_annotations.transaction_id = transactions.id
             WHERE transactions.user_id = ? AND removed_at IS NULL
@@ -641,13 +840,17 @@ public final class BudgetRepository {
             """,
             bindings: [.text(userID)]
         ).map { row in
-            BudgetTransaction(
-                id: try requiredString("plaid_transaction_id", row),
-                accountID: try requiredString("account_id", row),
-                categoryID: row["category_id"]?.string,
-                postedAt: DateCoding.day(from: try requiredString("posted_date", row)) ?? Date(timeIntervalSince1970: 0),
-                occurredAt: row["occurred_at"]?.string.flatMap { DateCoding.date(from: $0) },
-                merchantName: try requiredString("merchant_name", row),
+                BudgetTransaction(
+                    id: try requiredString("plaid_transaction_id", row),
+                    accountID: try requiredString("account_id", row),
+                    categoryID: row["category_id"]?.string,
+                    categoryAssignmentSource: row["category_assignment_source"]?.string.flatMap {
+                        CategoryAssignmentSource(rawValue: $0)
+                    },
+                    categoryAssignmentRuleID: row["category_assignment_rule_id"]?.string,
+                    postedAt: DateCoding.day(from: try requiredString("posted_date", row)) ?? Date(timeIntervalSince1970: 0),
+                    occurredAt: row["occurred_at"]?.string.flatMap { DateCoding.date(from: $0) },
+                    merchantName: try requiredString("merchant_name", row),
                 amount: Money(
                     minorUnits: try requiredInt64("amount_minor_units", row),
                     currencyCode: row["iso_currency_code"]?.string ?? "USD"
@@ -673,11 +876,99 @@ public final class BudgetRepository {
             institutions: institutions,
             accounts: accounts,
             categories: categories,
+            assignmentRules: try assignmentRules(userID: userID),
             transactions: transactions,
             recurringTransactionIDs: recurringIDs,
             accountOverrides: accountOverrides,
             lastSuccessfulSyncAt: try snapshotLastSuccessfulSyncAt(userID: userID)
         )
+    }
+
+    private func setRuleAssignedCategory(
+        transactionRowID: String,
+        categoryID: BudgetCategory.ID,
+        ruleID: BudgetAssignmentRule.ID,
+        userID: String
+    ) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO transaction_annotations(
+              transaction_id, user_id, category_id, category_assignment_source,
+              category_assignment_rule_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'rule', ?, ?, ?)
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              category_id = excluded.category_id,
+              category_assignment_source = 'rule',
+              category_assignment_rule_id = excluded.category_assignment_rule_id,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(transactionRowID),
+                .text(userID),
+                .text(categoryID),
+                .text(ruleID),
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    private func setPlaidAssignedCategory(
+        transactionRowID: String,
+        categoryID: BudgetCategory.ID,
+        userID: String
+    ) throws {
+        let now = nowString()
+        try database.run(
+            """
+            INSERT INTO transaction_annotations(
+              transaction_id, user_id, category_id, category_assignment_source,
+              category_assignment_rule_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'plaid', NULL, ?, ?)
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              category_id = excluded.category_id,
+              category_assignment_source = 'plaid',
+              category_assignment_rule_id = NULL,
+              updated_at = excluded.updated_at
+            """,
+            bindings: [
+                .text(transactionRowID),
+                .text(userID),
+                .text(categoryID),
+                .text(now),
+                .text(now)
+            ]
+        )
+    }
+
+    private func budgetCategories(userID: String) throws -> [BudgetCategory] {
+        try database.query(
+            """
+            SELECT id, name, monthly_limit_minor_units, iso_currency_code
+            FROM budget_categories
+            WHERE user_id = ?
+            ORDER BY name
+            """,
+            bindings: [.text(userID)]
+        ).map { row in
+            BudgetCategory(
+                id: try requiredString("id", row),
+                name: try requiredString("name", row),
+                monthlyLimit: row["monthly_limit_minor_units"]?.int64.map {
+                    Money(minorUnits: $0, currencyCode: row["iso_currency_code"]?.string ?? "USD")
+                }
+            )
+        }
+    }
+
+    private func isManualCategoryAssignment(
+        categoryID: BudgetCategory.ID?,
+        source: CategoryAssignmentSource?
+    ) -> Bool {
+        source == .manual || (categoryID != nil && source == nil)
     }
 
     private func nowString() -> String {

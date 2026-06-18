@@ -111,6 +111,20 @@ final class SecureLocalStorageTests: XCTestCase {
         XCTAssertThrowsError(try vault.accessToken(for: reference))
     }
 
+    func testFileSecureSecretStorePersistsSecretsOutsideKeychain() throws {
+        let directory = try temporaryDirectory()
+            .appendingPathComponent("secrets", isDirectory: true)
+        let store = FileSecureSecretStore(directoryURL: directory)
+
+        try store.setData(Data("secret-value".utf8), for: "sqlcipher-key-v1")
+
+        let reloadedStore = FileSecureSecretStore(directoryURL: directory)
+        XCTAssertEqual(try reloadedStore.data(for: "sqlcipher-key-v1"), Data("secret-value".utf8))
+
+        try reloadedStore.deleteAllData()
+        XCTAssertNil(try store.data(for: "sqlcipher-key-v1"))
+    }
+
     func testSecureLocalModeCanBeDrivenByAppInfoDictionary() {
         XCTAssertTrue(
             SecureLocalAppServices.usesSecureLocalMode(
@@ -140,6 +154,97 @@ final class SecureLocalStorageTests: XCTestCase {
         XCTAssertEqual(environmentURL.absoluteString, "https://relay.example.com")
     }
 
+    func testDevelopmentSecretStorePathsCanBeDrivenByEnvironment() throws {
+        let stateDirectory = try temporaryDirectory()
+        let secretStore = try SecureLocalAppServices.secretStore(
+            environment: [
+                "BUDGETTRACER_DEV_SECRET_STORE": "file",
+                "BUDGETTRACER_DEV_STATE_DIR": stateDirectory.path
+            ]
+        )
+        let configuration = try SecureLocalAppServices.storeConfiguration(
+            environment: [
+                "BUDGETTRACER_DEV_SECRET_STORE": "file",
+                "BUDGETTRACER_DEV_STATE_DIR": stateDirectory.path,
+                "BUDGETTRACER_USER_ID": "dev-user"
+            ]
+        )
+
+        XCTAssertTrue(secretStore is FileSecureSecretStore)
+        XCTAssertEqual(
+            configuration.databaseURL.path,
+            stateDirectory.appendingPathComponent("BudgetTracer.sqlite").path
+        )
+        XCTAssertEqual(configuration.userID, "dev-user")
+    }
+
+    func testAutomaticRelaySyncRequiresStaticIdentityToken() {
+        XCTAssertFalse(SecureLocalAppServices.allowsAutomaticRelaySync(environment: [:]))
+        XCTAssertFalse(
+            SecureLocalAppServices.allowsAutomaticRelaySync(
+                environment: ["BUDGETTRACER_APPLE_IDENTITY_TOKEN": "   "]
+            )
+        )
+        XCTAssertTrue(
+            SecureLocalAppServices.allowsAutomaticRelaySync(
+                environment: ["BUDGETTRACER_APPLE_IDENTITY_TOKEN": "dev-token"]
+            )
+        )
+    }
+
+    @MainActor
+    func testSecureLocalProviderSkipsRelayForBackgroundSyncWhenDisabled() async throws {
+        guard Self.sqlCipherIsAvailable() else {
+            throw XCTSkip("SQLCipher runtime is not installed for this test environment.")
+        }
+
+        let directory = try temporaryDirectory()
+        let configuration = SecureLocalStoreConfiguration(
+            databaseURL: directory.appendingPathComponent("BudgetTracer.sqlite"),
+            userID: "local-user"
+        )
+        let secretStore = InMemorySecureSecretStore()
+        let store = try SecureLocalStore(configuration: configuration, secretStore: secretStore)
+        let tokenVault = SecurePlaidTokenVault(secretStore: secretStore)
+        let accessTokenRef = try tokenVault.storeAccessToken(
+            "access-token",
+            userID: "local-user",
+            plaidItemID: "plaid-item"
+        )
+
+        try store.repository.upsertInstitution(id: "ins-test", name: "Test Bank")
+        try store.repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-test",
+                userID: "local-user",
+                plaidItemID: "plaid-item",
+                institutionID: "ins-test",
+                accessTokenRef: accessTokenRef,
+                transactionsCursor: nil
+            )
+        )
+
+        CountingRelayURLProtocol.reset()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CountingRelayURLProtocol.self]
+        let client = try PlaidRelayClient(
+            baseURL: URL(string: "https://relay.example.com")!,
+            identityTokenProvider: StaticAppleIdentityTokenProvider(token: "dev-token"),
+            session: URLSession(configuration: sessionConfiguration)
+        )
+        let provider = SecureLocalFinancialDataProvider(
+            store: store,
+            relayClient: client,
+            tokenVault: tokenVault,
+            allowsBackgroundSync: false
+        )
+
+        let snapshot = try await provider.fetchBudgetSnapshot(freshnessPolicy: .syncIfStale(maxAge: 300))
+
+        XCTAssertEqual(snapshot.institutions, [Institution(id: "ins-test", name: "Test Bank")])
+        XCTAssertEqual(CountingRelayURLProtocol.requestCount, 0)
+    }
+
     @MainActor
     func testPlaidRelayRejectsInsecureNonLocalhostURL() {
         XCTAssertThrowsError(
@@ -148,6 +253,28 @@ final class SecureLocalStorageTests: XCTestCase {
                 identityTokenProvider: StaticAppleIdentityTokenProvider(token: "signed-apple-token")
             )
         )
+    }
+
+    @MainActor
+    func testPlaidRelayIncludesErrorBodyInStatusFailures() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RelayErrorURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = try PlaidRelayClient(
+            baseURL: URL(string: "https://relay.example.com")!,
+            identityTokenProvider: StaticAppleIdentityTokenProvider(token: "bad-token"),
+            session: session
+        )
+
+        do {
+            _ = try await client.createLinkToken(clientUserID: "local-user")
+            XCTFail("Expected relay request to fail.")
+        } catch {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Plaid relay returned HTTP 401: The bearer token is malformed."
+            )
+        }
     }
 
     private static func sqlCipherIsAvailable() -> Bool {
@@ -160,4 +287,75 @@ final class SecureLocalStorageTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+}
+
+private final class RelayErrorURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let data = #"{"error":"The bearer token is malformed."}"#.data(using: .utf8)!
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 401,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class CountingRelayURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var count = 0
+
+    static var requestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    static func reset() {
+        lock.lock()
+        count = 0
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.count += 1
+        Self.lock.unlock()
+
+        let data = #"{"error":"Unexpected relay request."}"#.data(using: .utf8)!
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 500,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

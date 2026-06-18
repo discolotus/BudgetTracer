@@ -8,7 +8,10 @@ struct TransactionDetailSheet: View {
     var snapshot: BudgetSnapshot
     var setRecurring: (BudgetTransaction.ID, Bool) -> Void
     var setCategory: (BudgetTransaction.ID, BudgetCategory.ID?) -> Void
+    var saveAssignmentRule: (BudgetAssignmentRule, Bool) -> Void = { _, _ in }
     var dismiss: () -> Void
+
+    @State private var isShowingAssignmentRuleEditor = false
 
     private var isRecurring: Bool {
         snapshot.recurringTransactionIDs.contains(transaction.id)
@@ -36,6 +39,23 @@ struct TransactionDetailSheet: View {
         )
     }
 
+    private var selectedCategoryName: String? {
+        transaction.categoryID.flatMap { categoryID in
+            snapshot.categories.first { $0.id == categoryID }?.name
+        }
+    }
+
+    private var existingAssignmentRule: BudgetAssignmentRule? {
+        guard let categoryID = transaction.categoryID else {
+            return nil
+        }
+
+        return snapshot.assignmentRules.first { rule in
+            rule.categoryID == categoryID
+                && rule.matches(transaction)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             handle
@@ -54,6 +74,18 @@ struct TransactionDetailSheet: View {
         #if os(macOS)
         .frame(width: 440, height: 540)
         #endif
+        .sheet(isPresented: $isShowingAssignmentRuleEditor) {
+            if let categoryID = transaction.categoryID {
+                AssignmentRuleEditorSheet(
+                    transaction: transaction,
+                    snapshot: snapshot,
+                    existingRule: existingAssignmentRule,
+                    initialCategoryID: categoryID,
+                    saveAssignmentRule: saveAssignmentRule,
+                    dismiss: { isShowingAssignmentRuleEditor = false }
+                )
+            }
+        }
     }
 
     private var handle: some View {
@@ -157,7 +189,53 @@ struct TransactionDetailSheet: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
+
+            if let categoryID = transaction.categoryID, let selectedCategoryName {
+                ThemeRowDivider()
+
+                assignmentRuleRow(categoryID: categoryID, categoryName: selectedCategoryName)
+            }
         }
         .budgetTracerCard()
+    }
+
+    private func assignmentRuleRow(categoryID: BudgetCategory.ID, categoryName: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: existingAssignmentRule == nil ? "wand.and.stars" : "checkmark.circle")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BudgetTracerStyle.accent)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(existingAssignmentRule == nil ? "Rule for \(transaction.merchantName)" : "Rule active")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Text(rulePreviewText(categoryName: categoryName))
+                    .font(.caption)
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(existingAssignmentRule == nil ? "Configure" : "Edit") {
+                isShowingAssignmentRuleEditor = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+
+    private func rulePreviewText(categoryName: String) -> String {
+        if existingAssignmentRule != nil {
+            return "Matching transactions assign to \(categoryName)."
+        }
+
+        return "Review matching transactions before saving to \(categoryName)."
     }
 }

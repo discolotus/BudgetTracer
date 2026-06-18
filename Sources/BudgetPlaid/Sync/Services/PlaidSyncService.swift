@@ -105,6 +105,7 @@ public final class PlaidSyncService {
                 throw PlaidSyncError.missingTransactionsCursor
             }
 
+            try repository.applyAutomaticCategoryAssignments(userID: item.userID)
             try repository.updateTransactionsCursor(itemID: item.id, cursor: finalCursor, syncedAt: finishedAt)
             try repository.finishSyncEvent(
                 id: syncEventID,

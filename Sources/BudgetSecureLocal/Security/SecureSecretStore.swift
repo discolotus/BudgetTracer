@@ -154,6 +154,84 @@ public final class InMemorySecureSecretStore: SecureSecretStore, @unchecked Send
     }
 }
 
+public final class FileSecureSecretStore: SecureSecretStore, @unchecked Sendable {
+    private let directoryURL: URL
+    private let fileManager: FileManager
+    private let lock = NSLock()
+
+    public init(directoryURL: URL, fileManager: FileManager = .default) {
+        self.directoryURL = directoryURL
+        self.fileManager = fileManager
+    }
+
+    public func data(for account: String) throws -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let url = fileURL(for: account)
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        return try Data(contentsOf: url)
+    }
+
+    public func setData(_ data: Data, for account: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        try ensureDirectoryExists()
+        let url = fileURL(for: account)
+        try data.write(to: url, options: [.atomic])
+        try fileManager.setAttributes(Self.secureFileAttributes, ofItemAtPath: url.path)
+    }
+
+    public func deleteData(for account: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let url = fileURL(for: account)
+        if fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+    }
+
+    public func deleteAllData() throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if fileManager.fileExists(atPath: directoryURL.path) {
+            try fileManager.removeItem(at: directoryURL)
+        }
+    }
+
+    private func ensureDirectoryExists() throws {
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: Self.secureDirectoryAttributes
+        )
+        try fileManager.setAttributes(Self.secureDirectoryAttributes, ofItemAtPath: directoryURL.path)
+    }
+
+    private func fileURL(for account: String) -> URL {
+        let encoded = Data(account.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+        return directoryURL.appendingPathComponent("\(encoded).secret", isDirectory: false)
+    }
+
+    private static var secureDirectoryAttributes: [FileAttributeKey: Any] {
+        [.posixPermissions: 0o700]
+    }
+
+    private static var secureFileAttributes: [FileAttributeKey: Any] {
+        [.posixPermissions: 0o600]
+    }
+}
+
 enum SecureRandom {
     static func data(byteCount: Int) throws -> Data {
         var bytes = [UInt8](repeating: 0, count: byteCount)

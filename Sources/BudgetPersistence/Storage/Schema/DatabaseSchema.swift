@@ -65,6 +65,7 @@ public enum DatabaseSchema {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       kind TEXT,
       includes_in_available_cash INTEGER,
+      includes_in_credit_card_debt INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -81,6 +82,23 @@ public enum DatabaseSchema {
       updated_at TEXT NOT NULL,
       UNIQUE(user_id, name)
     );
+
+    CREATE TABLE IF NOT EXISTS assignment_rules (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      merchant_contains TEXT NOT NULL,
+      match_field TEXT NOT NULL DEFAULT 'merchantName',
+      match_operator TEXT NOT NULL DEFAULT 'contains',
+      amount_filter TEXT NOT NULL DEFAULT 'any',
+      account_id TEXT,
+      category_id TEXT NOT NULL REFERENCES budget_categories(id) ON DELETE CASCADE,
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_assignment_rules_user_id ON assignment_rules(user_id);
 
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
@@ -113,6 +131,8 @@ public enum DatabaseSchema {
       transaction_id TEXT PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       category_id TEXT REFERENCES budget_categories(id) ON DELETE SET NULL,
+      category_assignment_source TEXT,
+      category_assignment_rule_id TEXT,
       is_regular_monthly INTEGER NOT NULL DEFAULT 0,
       note TEXT,
       created_at TEXT NOT NULL,

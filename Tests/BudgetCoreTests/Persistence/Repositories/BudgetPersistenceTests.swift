@@ -447,10 +447,335 @@ final class BudgetPersistenceTests: XCTestCase {
         XCTAssertNil(snapshot.transactions.first { $0.id == "txn-1" }?.categoryID)
     }
 
+    func testAssignmentRuleAppliesToMatchingUnassignedTransactions() throws {
+        let repository = try makeRepository()
+        try seedRuleFixture(repository)
+        try repository.upsertBudgetCategory(id: "cat-dining", userID: "user-1", name: "Dining")
+
+        let rule = BudgetAssignmentRule(
+            id: "rule-starbucks",
+            name: "Starbucks -> Dining",
+            merchantContains: "starbucks",
+            categoryID: "cat-dining"
+        )
+        try repository.upsertAssignmentRule(rule, userID: "user-1")
+        try repository.applyAssignmentRules(userID: "user-1", ruleIDs: [rule.id])
+
+        let snapshot = try repository.fetchSnapshot(userID: "user-1")
+        let starbucks = try XCTUnwrap(snapshot.transactions.first { $0.id == "txn-starbucks" })
+        let market = try XCTUnwrap(snapshot.transactions.first { $0.id == "txn-market" })
+
+        XCTAssertEqual(snapshot.assignmentRules, [rule])
+        XCTAssertEqual(starbucks.categoryID, "cat-dining")
+        XCTAssertEqual(starbucks.categoryAssignmentSource, .rule)
+        XCTAssertEqual(starbucks.categoryAssignmentRuleID, "rule-starbucks")
+        XCTAssertNil(market.categoryID)
+    }
+
+    func testAssignmentRulePersistsConfigurationOptions() throws {
+        let repository = try makeRepository()
+        try seedRuleFixture(repository)
+        try repository.upsertBudgetCategory(id: "cat-dining", userID: "user-1", name: "Dining")
+
+        let rule = BudgetAssignmentRule(
+            id: "rule-starbucks",
+            name: "Exact Starbucks expenses",
+            merchantContains: "Starbucks",
+            categoryID: "cat-dining",
+            isEnabled: true,
+            matchField: .merchantName,
+            matchOperator: .equals,
+            amountFilter: .expensesOnly,
+            accountID: "account-1"
+        )
+
+        try repository.upsertAssignmentRule(rule, userID: "user-1")
+
+        let snapshot = try repository.fetchSnapshot(userID: "user-1")
+        XCTAssertEqual(snapshot.assignmentRules, [rule])
+    }
+
+    func testAssignmentRuleDoesNotOverrideManualCategory() throws {
+        let repository = try makeRepository()
+        try seedRuleFixture(repository)
+        try repository.upsertBudgetCategory(id: "cat-dining", userID: "user-1", name: "Dining")
+        try repository.upsertBudgetCategory(id: "cat-other", userID: "user-1", name: "Other Custom")
+        try repository.setCategory(transactionID: "txn-starbucks", categoryID: "cat-other", userID: "user-1")
+
+        let rule = BudgetAssignmentRule(
+            id: "rule-starbucks",
+            name: "Starbucks -> Dining",
+            merchantContains: "starbucks",
+            categoryID: "cat-dining"
+        )
+        try repository.upsertAssignmentRule(rule, userID: "user-1")
+        try repository.applyAssignmentRules(userID: "user-1", ruleIDs: [rule.id])
+
+        let snapshot = try repository.fetchSnapshot(userID: "user-1")
+        let starbucks = try XCTUnwrap(snapshot.transactions.first { $0.id == "txn-starbucks" })
+
+        XCTAssertEqual(starbucks.categoryID, "cat-other")
+        XCTAssertEqual(starbucks.categoryAssignmentSource, .manual)
+        XCTAssertNil(starbucks.categoryAssignmentRuleID)
+    }
+
+    func testAutomaticCategoryAssignmentsUsePlaidCategories() throws {
+        let repository = try makeRepository()
+        try seedSingleAccountPlaidItem(repository)
+
+        try upsertTransaction(
+            repository,
+            id: "txn-payroll",
+            merchantName: "Payroll",
+            amountMinorUnits: 320_000,
+            primary: "INCOME",
+            detailed: "INCOME_WAGES"
+        )
+        try upsertTransaction(
+            repository,
+            id: "txn-rent",
+            merchantName: "Rent",
+            amountMinorUnits: -210_000,
+            primary: "RENT_AND_UTILITIES",
+            detailed: "RENT_AND_UTILITIES_RENT"
+        )
+        try upsertTransaction(
+            repository,
+            id: "txn-market",
+            merchantName: "Neighborhood Market",
+            amountMinorUnits: -8_400,
+            primary: "FOOD_AND_DRINK",
+            detailed: "FOOD_AND_DRINK_GROCERIES"
+        )
+        try upsertTransaction(
+            repository,
+            id: "txn-payment",
+            merchantName: "Credit Card Payment",
+            amountMinorUnits: -50_000,
+            primary: "LOAN_PAYMENTS",
+            detailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+        )
+
+        try repository.applyAutomaticCategoryAssignments(userID: "user-1")
+
+        let transactions = try transactionsByID(repository)
+        XCTAssertEqual(transactions["txn-payroll"]?.categoryID, "default-income")
+        XCTAssertEqual(transactions["txn-payroll"]?.categoryAssignmentSource, .plaid)
+        XCTAssertEqual(transactions["txn-rent"]?.categoryID, "default-housing")
+        XCTAssertEqual(transactions["txn-rent"]?.categoryAssignmentSource, .plaid)
+        XCTAssertEqual(transactions["txn-market"]?.categoryID, "default-groceries")
+        XCTAssertEqual(transactions["txn-market"]?.categoryAssignmentSource, .plaid)
+        XCTAssertNil(transactions["txn-payment"]?.categoryID)
+    }
+
+    func testAutomaticCategoryAssignmentsLetMerchantRulesOverridePlaidSuggestions() throws {
+        let repository = try makeRepository()
+        try seedSingleAccountPlaidItem(repository)
+        try repository.upsertBudgetCategory(id: "cat-dining", userID: "user-1", name: "Dining")
+        try upsertTransaction(
+            repository,
+            id: "txn-starbucks",
+            merchantName: "Starbucks",
+            amountMinorUnits: -650,
+            primary: "FOOD_AND_DRINK",
+            detailed: "FOOD_AND_DRINK_GROCERIES"
+        )
+        try repository.upsertAssignmentRule(
+            BudgetAssignmentRule(
+                id: "rule-starbucks",
+                name: "Starbucks -> Dining",
+                merchantContains: "starbucks",
+                categoryID: "cat-dining"
+            ),
+            userID: "user-1"
+        )
+
+        try repository.applyAutomaticCategoryAssignments(userID: "user-1")
+
+        let starbucks = try XCTUnwrap(transactionsByID(repository)["txn-starbucks"])
+        XCTAssertEqual(starbucks.categoryID, "cat-dining")
+        XCTAssertEqual(starbucks.categoryAssignmentSource, .rule)
+        XCTAssertEqual(starbucks.categoryAssignmentRuleID, "rule-starbucks")
+    }
+
+    func testAutomaticCategoryAssignmentsDoNotOverrideManualCategory() throws {
+        let repository = try makeRepository()
+        try seedSingleAccountPlaidItem(repository)
+        try upsertTransaction(
+            repository,
+            id: "txn-rent",
+            merchantName: "Rent",
+            amountMinorUnits: -210_000,
+            primary: "RENT_AND_UTILITIES",
+            detailed: "RENT_AND_UTILITIES_RENT"
+        )
+        try repository.setCategory(transactionID: "txn-rent", categoryID: "default-other", userID: "user-1")
+
+        try repository.applyAutomaticCategoryAssignments(userID: "user-1")
+
+        let rent = try XCTUnwrap(transactionsByID(repository)["txn-rent"])
+        XCTAssertEqual(rent.categoryID, "default-other")
+        XCTAssertEqual(rent.categoryAssignmentSource, .manual)
+        XCTAssertNil(rent.categoryAssignmentRuleID)
+    }
+
+    func testAccountOverridePersistsCreditCardDebtInclusion() throws {
+        let repository = try makeRepository()
+        try seedSingleAccountPlaidItem(repository)
+
+        try repository.setAccountOverride(
+            accountID: "account-1",
+            override: AccountOverride(includesInCreditCardDebt: false),
+            userID: "user-1"
+        )
+
+        XCTAssertEqual(
+            try repository.fetchSnapshot(userID: "user-1").accountOverrides["account-1"],
+            AccountOverride(includesInCreditCardDebt: false)
+        )
+    }
+
     private func makeRepository() throws -> BudgetRepository {
         let database = try SQLiteDatabase(path: ":memory:")
         let repository = BudgetRepository(database: database)
         try repository.migrate()
         return repository
+    }
+
+    private func seedRuleFixture(_ repository: BudgetRepository) throws {
+        try repository.ensureUser(id: "user-1")
+        try repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-1",
+                userID: "user-1",
+                plaidItemID: "plaid-item-1",
+                institutionID: nil,
+                accessTokenRef: "vault://token/item-1",
+                transactionsCursor: nil
+            )
+        )
+        try repository.upsertAccount(
+            StoredAccount(
+                id: "account-1",
+                userID: "user-1",
+                itemID: "item-1",
+                plaidAccountID: "account-1",
+                name: "Checking",
+                officialName: nil,
+                kind: .checking,
+                plaidType: "depository",
+                plaidSubtype: "checking",
+                mask: nil,
+                currencyCode: "USD",
+                currentBalanceMinorUnits: 100_000,
+                availableBalanceMinorUnits: nil
+            )
+        )
+
+        try repository.upsertTransaction(
+            StoredTransaction(
+                id: "txn-starbucks",
+                userID: "user-1",
+                itemID: "item-1",
+                accountID: "account-1",
+                plaidTransactionID: "txn-starbucks",
+                pendingTransactionID: nil,
+                merchantName: "Starbucks",
+                originalName: nil,
+                postedDate: DateCoding.day(from: "2026-06-01")!,
+                authorizedDate: nil,
+                amountMinorUnits: -433,
+                currencyCode: "USD",
+                paymentChannel: nil,
+                personalFinanceCategoryPrimary: nil,
+                personalFinanceCategoryDetailed: nil,
+                isPending: false
+            )
+        )
+        try repository.upsertTransaction(
+            StoredTransaction(
+                id: "txn-market",
+                userID: "user-1",
+                itemID: "item-1",
+                accountID: "account-1",
+                plaidTransactionID: "txn-market",
+                pendingTransactionID: nil,
+                merchantName: "Neighborhood Market",
+                originalName: nil,
+                postedDate: DateCoding.day(from: "2026-06-02")!,
+                authorizedDate: nil,
+                amountMinorUnits: -2_100,
+                currencyCode: "USD",
+                paymentChannel: nil,
+                personalFinanceCategoryPrimary: nil,
+                personalFinanceCategoryDetailed: nil,
+                isPending: false
+            )
+        )
+    }
+
+    private func seedSingleAccountPlaidItem(_ repository: BudgetRepository) throws {
+        try repository.ensureUser(id: "user-1")
+        try repository.upsertPlaidItem(
+            PlaidItemRecord(
+                id: "item-1",
+                userID: "user-1",
+                plaidItemID: "plaid-item-1",
+                institutionID: nil,
+                accessTokenRef: "vault://token/item-1",
+                transactionsCursor: nil
+            )
+        )
+        try repository.upsertAccount(
+            StoredAccount(
+                id: "account-1",
+                userID: "user-1",
+                itemID: "item-1",
+                plaidAccountID: "account-1",
+                name: "Checking",
+                officialName: nil,
+                kind: .checking,
+                plaidType: "depository",
+                plaidSubtype: "checking",
+                mask: nil,
+                currencyCode: "USD",
+                currentBalanceMinorUnits: 100_000,
+                availableBalanceMinorUnits: nil
+            )
+        )
+    }
+
+    private func upsertTransaction(
+        _ repository: BudgetRepository,
+        id: String,
+        merchantName: String,
+        amountMinorUnits: Int64,
+        primary: String?,
+        detailed: String?
+    ) throws {
+        try repository.upsertTransaction(
+            StoredTransaction(
+                id: id,
+                userID: "user-1",
+                itemID: "item-1",
+                accountID: "account-1",
+                plaidTransactionID: id,
+                pendingTransactionID: nil,
+                merchantName: merchantName,
+                originalName: nil,
+                postedDate: DateCoding.day(from: "2026-06-01")!,
+                authorizedDate: nil,
+                amountMinorUnits: amountMinorUnits,
+                currencyCode: "USD",
+                paymentChannel: nil,
+                personalFinanceCategoryPrimary: primary,
+                personalFinanceCategoryDetailed: detailed,
+                isPending: false
+            )
+        )
+    }
+
+    private func transactionsByID(_ repository: BudgetRepository) throws -> [BudgetTransaction.ID: BudgetTransaction] {
+        Dictionary(uniqueKeysWithValues: try repository.fetchSnapshot(userID: "user-1").transactions.map { ($0.id, $0) })
     }
 }
