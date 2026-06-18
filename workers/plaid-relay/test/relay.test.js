@@ -3,6 +3,7 @@ import test from "node:test";
 import { handleRequest, testInternals } from "../src/index.js";
 
 const env = {
+  RATE_LIMIT_SCOPE: "test",
   PLAID_ENVIRONMENT: "sandbox",
   PLAID_CLIENT_ID: "client-id",
   PLAID_SANDBOX_SECRET: "sandbox-secret",
@@ -55,6 +56,53 @@ test("requires authorization for Plaid relay routes", async () => {
   );
 
   assert.equal(response.status, 401);
+});
+
+test("rate limits Plaid relay requests before auth", async () => {
+  const preAuthLimiter = fakeRateLimiter(false);
+  const response = await handleRequest(
+    new Request("https://relay.example/v1/plaid/link-token", {
+      method: "POST",
+      headers: {
+        "CF-Connecting-IP": "203.0.113.10"
+      },
+      body: "{}"
+    }),
+    {
+      ...env,
+      PLAID_RELAY_PREAUTH_RATE_LIMITER: preAuthLimiter
+    }
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("Retry-After"), "60");
+  assert.match(body.error, /Too many/);
+  assert.deepEqual(preAuthLimiter.keys, ["test:preauth:203.0.113.10:/v1/plaid/link-token"]);
+});
+
+test("rate limits Plaid relay requests after auth by subject and route", async () => {
+  const preAuthLimiter = fakeRateLimiter(true);
+  const authLimiter = fakeRateLimiter(false);
+  const response = await handleRequest(
+    new Request("https://relay.example/v1/plaid/link-token", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.DEV_BEARER_TOKEN}`,
+        "CF-Connecting-IP": "203.0.113.10"
+      },
+      body: "{}"
+    }),
+    {
+      ...env,
+      PLAID_RELAY_PREAUTH_RATE_LIMITER: preAuthLimiter,
+      PLAID_RELAY_AUTH_RATE_LIMITER: authLimiter
+    }
+  );
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(preAuthLimiter.keys, ["test:preauth:203.0.113.10:/v1/plaid/link-token"]);
+  assert.deepEqual(authLimiter.keys, ["test:auth:dev-user:/v1/plaid/link-token"]);
 });
 
 test("accepts configured iOS and macOS Apple token audiences", () => {
@@ -139,3 +187,13 @@ test("creates a Plaid link token using dev bearer bypass outside production", as
     globalThis.fetch = originalFetch;
   }
 });
+
+function fakeRateLimiter(success) {
+  return {
+    keys: [],
+    async limit({ key }) {
+      this.keys.push(key);
+      return { success };
+    }
+  };
+}

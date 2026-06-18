@@ -35,6 +35,17 @@ needs the stable dev, production `workers.dev`, and future owned-domain URLs;
 versioned or aliased preview URLs would create extra public entry points for the
 same financial API surface.
 
+The Plaid relay also uses Cloudflare Workers Rate Limiting bindings:
+
+- `PLAID_RELAY_PREAUTH_RATE_LIMITER`: `300` requests per minute per
+  `CF-Connecting-IP` and Plaid route. This is a coarse guard for unauthenticated
+  or invalid-token traffic before Apple token verification finishes.
+- `PLAID_RELAY_AUTH_RATE_LIMITER`: `120` requests per minute per authenticated
+  Apple subject and Plaid route. This is the main application-level limit.
+
+The rate-limit counters are configured in `wrangler.jsonc`; they are not secrets
+and do not require any GitHub or Cloudflare environment variables.
+
 ## Repo Layout
 
 ```text
