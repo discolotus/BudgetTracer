@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleRequest } from "../src/index.js";
+import { handleRequest, testInternals } from "../src/index.js";
 
 const env = {
   PLAID_ENVIRONMENT: "sandbox",
@@ -10,7 +10,7 @@ const env = {
   PLAID_PRODUCTS: "transactions",
   PLAID_COUNTRY_CODES: "US",
   PLAID_REDIRECT_URI: "https://budgettracer-plaid-relay-dev.example.workers.dev/plaid/oauth",
-  APPLE_AUDIENCE: "com.budgettracer.ios",
+  APPLE_AUDIENCES: "com.budgettracer.ios,com.budgettracer.mac",
   APPLE_APP_SITE_ASSOCIATION_APP_IDS: "TEAMID.com.budgettracer.ios,TEAMID.com.budgettracer.mac",
   DEV_BEARER_TOKEN: "local-dev-bearer-token-at-least-16-chars"
 };
@@ -55,6 +55,38 @@ test("requires authorization for Plaid relay routes", async () => {
   );
 
   assert.equal(response.status, 401);
+});
+
+test("accepts configured iOS and macOS Apple token audiences", () => {
+  const audiences = testInternals.requiredAppleAudiences(env);
+  assert.deepEqual(audiences, ["com.budgettracer.ios", "com.budgettracer.mac"]);
+
+  const now = Math.floor(Date.now() / 1000);
+  assert.doesNotThrow(() => testInternals.validateAppleClaims({
+    iss: "https://appleid.apple.com",
+    aud: "com.budgettracer.ios",
+    exp: now + 300,
+    iat: now
+  }, audiences));
+  assert.doesNotThrow(() => testInternals.validateAppleClaims({
+    iss: "https://appleid.apple.com",
+    aud: "com.budgettracer.mac",
+    exp: now + 300,
+    iat: now
+  }, audiences));
+  assert.throws(() => testInternals.validateAppleClaims({
+    iss: "https://appleid.apple.com",
+    aud: "com.other.app",
+    exp: now + 300,
+    iat: now
+  }, audiences), /audience/);
+});
+
+test("keeps legacy single Apple audience configuration working", () => {
+  assert.deepEqual(
+    testInternals.requiredAppleAudiences({ APPLE_AUDIENCE: "com.budgettracer.ios" }),
+    ["com.budgettracer.ios"]
+  );
 });
 
 test("restricts owned-domain API routes to configured API hosts", async () => {

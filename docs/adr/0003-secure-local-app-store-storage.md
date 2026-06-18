@@ -16,7 +16,7 @@ BudgetTracer is intentionally one local user per install. For App Store use, the
 - Store SQLCipher key material and Plaid access tokens in Keychain with an unlocked-device accessibility class that supports encrypted OS backup restore.
 - Use Sign in with Apple only to authenticate calls to a stateless Plaid relay.
 - Do not store Plaid access tokens or ledger rows on the relay backend.
-- Configure the relay with `BUDGETTRACER_APPLE_AUDIENCE` in production so it validates Sign in with Apple identity tokens against Apple's JWKS.
+- Configure the relay with the production Apple app identifiers so it validates Sign in with Apple identity tokens against Apple's JWKS.
 - Require device-owner authentication before secure-local financial data is shown.
 - Keep demo mode as the default development mode; secure-local mode is selected with `BUDGETTRACER_DATA_MODE=secure-local` or `BUDGETTRACER_SECURE_LOCAL=1`.
 
