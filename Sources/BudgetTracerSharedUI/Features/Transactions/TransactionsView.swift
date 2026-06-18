@@ -18,7 +18,9 @@ struct TransactionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
+                pageHeader
+
                 if let selectedAccount {
                     AccountDetailSummaryView(
                         account: selectedAccount,
@@ -67,6 +69,24 @@ struct TransactionsView: View {
                 dismiss: { selectedTransactionID = nil }
             )
             .presentationDetents([.medium, .large])
+        }
+    }
+
+    private var pageHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedAccount?.name ?? "Transactions")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Text("\(transactions.count) matching entries")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+            }
+
+            Spacer()
         }
     }
 
@@ -141,25 +161,35 @@ private struct TransactionRowView: View {
     }
 
     private var transactionLabel: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(transaction.merchantName)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(BudgetTracerStyle.ink)
+        HStack(spacing: 12) {
+            Circle()
+                .strokeBorder(transaction.amount.isIncome ? BudgetTracerStyle.positive : BudgetTracerStyle.accent, lineWidth: 1.6)
+                .background(
+                    Circle()
+                        .fill((transaction.amount.isIncome ? BudgetTracerStyle.positive : BudgetTracerStyle.accent).opacity(0.08))
+                )
+                .frame(width: 18, height: 18)
 
-            HStack(spacing: 6) {
-                Text(transaction.postedAt.formatted(date: .abbreviated, time: .omitted))
-                if let categoryName {
-                    Text("·")
-                    Text(categoryName)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.merchantName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
+
+                HStack(spacing: 6) {
+                    Text(transaction.postedAt.formatted(date: .abbreviated, time: .omitted))
+                    if let categoryName {
+                        Text("·")
+                        Text(categoryName)
+                    }
+                    if isRecurring {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .help("Regular monthly")
+                    }
+                    categorySourceIcon
                 }
-                if isRecurring {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .help("Regular monthly")
-                }
-                categorySourceIcon
+                .font(.caption)
+                .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
-            .font(.caption)
-            .foregroundStyle(BudgetTracerStyle.inkMuted)
         }
     }
 

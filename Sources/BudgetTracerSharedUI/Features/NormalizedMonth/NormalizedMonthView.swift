@@ -367,7 +367,7 @@ struct NormalizedMonthView: View {
                 )
                     .frame(height: 280)
                     .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
+                    .budgetTracerCard(cornerRadius: 16)
 
                 CashFlowAccountBreakdown(
                     snapshot: snapshot,
@@ -377,7 +377,7 @@ struct NormalizedMonthView: View {
                     setAccountOverride: setAccountOverride
                 )
                     .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
+                    .budgetTracerCard(cornerRadius: 16)
 
                 DailySpendingPlot(
                     points: spendingPoints,
@@ -389,7 +389,7 @@ struct NormalizedMonthView: View {
                 )
                     .frame(height: 280)
                     .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
+                    .budgetTracerCard(cornerRadius: 16)
 
                 TransactionTimeSpendingPlot(
                     points: transactionTimelinePoints,
@@ -397,7 +397,7 @@ struct NormalizedMonthView: View {
                 )
                 .frame(height: 280)
                 .padding(18)
-                .budgetTracerCard(cornerRadius: 24)
+                .budgetTracerCard(cornerRadius: 16)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 16)], spacing: 16) {
                     SummaryPill(title: "Regular items", value: "\(snapshot.recurringTransactionIDs.count)")
@@ -451,7 +451,7 @@ struct NormalizedMonthView: View {
                             }
                         }
                     }
-                    .budgetTracerCard(cornerRadius: 24)
+                    .budgetTracerCard(cornerRadius: 16)
                 }
             }
             .padding()
@@ -783,8 +783,8 @@ private struct TransactionTimeSpendingPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Transactions")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 Text((points.last?.cumulativeSpending ?? Money(minorUnits: 0)).formatted)
                     .font(.headline.monospacedDigit())
@@ -886,8 +886,8 @@ private struct DailySpendingPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Spending")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 Text("\(totalCumulativeNormalizedSpending.formatted) / \(totalCumulativeNormalizedIncome.formatted)")
                     .font(.headline.monospacedDigit())
@@ -1127,8 +1127,8 @@ private struct CashFlowPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(balanceBasis.chartTitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 if let last = points.last {
                     Text(last.runningCashMinusCreditDebt.formatted)
@@ -1440,8 +1440,8 @@ private struct CashFlowAccountBreakdown: View {
                         .frame(width: 14)
 
                     Text("Plot accounts")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BudgetTracerStyle.ink)
 
                     Spacer()
 
@@ -1914,7 +1914,7 @@ private struct SummaryPill: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .budgetTracerCard(cornerRadius: 18)
+        .budgetTracerCard(cornerRadius: 14)
     }
 }
 

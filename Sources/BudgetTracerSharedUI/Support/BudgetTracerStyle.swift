@@ -6,14 +6,14 @@ import UIKit
 import AppKit
 #endif
 
-/// Semantic design tokens for the BudgetTracer design language: warm paper canvas,
-/// typography-led hierarchy, quiet surfaces, restrained color, soft motion.
+/// Semantic design tokens for the BudgetTracer design language: crisp workspace
+/// surfaces, strong typography, compact controls, and a focused red accent.
 enum BudgetTracerStyle {
     // MARK: Ink
 
     static let ink = adaptive(
-        light: Color(red: 0.110, green: 0.118, blue: 0.106),
-        dark: Color(red: 0.945, green: 0.941, blue: 0.918)
+        light: Color(red: 0.105, green: 0.101, blue: 0.142),
+        dark: Color(red: 0.956, green: 0.950, blue: 0.974)
     )
 
     static var inkMuted: Color { ink.opacity(0.55) }
@@ -22,55 +22,65 @@ enum BudgetTracerStyle {
     // MARK: Surfaces
 
     static let canvas = adaptive(
-        light: Color(red: 0.965, green: 0.957, blue: 0.937),
-        dark: Color(red: 0.075, green: 0.082, blue: 0.078)
+        light: Color(red: 0.963, green: 0.961, blue: 0.976),
+        dark: Color(red: 0.091, green: 0.087, blue: 0.128)
     )
 
     static let surface = adaptive(
-        light: Color.white,
-        dark: Color(red: 0.118, green: 0.125, blue: 0.122)
+        light: Color(red: 0.995, green: 0.994, blue: 1.000),
+        dark: Color(red: 0.135, green: 0.129, blue: 0.188)
     )
 
     static let surfaceSunken = adaptive(
-        light: Color(red: 0.110, green: 0.118, blue: 0.106).opacity(0.045),
-        dark: Color.white.opacity(0.06)
+        light: Color(red: 0.107, green: 0.101, blue: 0.145).opacity(0.055),
+        dark: Color.white.opacity(0.075)
+    )
+
+    static let sidebar = adaptive(
+        light: Color(red: 0.938, green: 0.936, blue: 0.956),
+        dark: Color(red: 0.108, green: 0.103, blue: 0.153)
+    )
+
+    static let surfaceRaised = adaptive(
+        light: Color.white,
+        dark: Color(red: 0.164, green: 0.157, blue: 0.224)
     )
 
     static let hairline = adaptive(
-        light: Color(red: 0.110, green: 0.118, blue: 0.106).opacity(0.08),
-        dark: Color.white.opacity(0.10)
+        light: Color(red: 0.105, green: 0.101, blue: 0.142).opacity(0.075),
+        dark: Color.white.opacity(0.105)
     )
 
     // MARK: Brand & semantic color
 
     static let accent = adaptive(
-        light: Color(red: 0.118, green: 0.361, blue: 0.294),
-        dark: Color(red: 0.357, green: 0.710, blue: 0.588)
+        light: Color(red: 0.965, green: 0.222, blue: 0.178),
+        dark: Color(red: 1.000, green: 0.353, blue: 0.302)
     )
 
     static let accentSoft = adaptive(
-        light: Color(red: 0.890, green: 0.933, blue: 0.906),
-        dark: Color(red: 0.357, green: 0.710, blue: 0.588).opacity(0.16)
+        light: Color(red: 1.000, green: 0.895, blue: 0.880),
+        dark: Color(red: 1.000, green: 0.353, blue: 0.302).opacity(0.18)
     )
 
     static let positive = adaptive(
-        light: Color(red: 0.180, green: 0.482, blue: 0.322),
-        dark: Color(red: 0.384, green: 0.718, blue: 0.533)
+        light: Color(red: 0.000, green: 0.466, blue: 0.330),
+        dark: Color(red: 0.341, green: 0.760, blue: 0.588)
     )
 
     static let caution = adaptive(
-        light: Color(red: 0.745, green: 0.329, blue: 0.188),
-        dark: Color(red: 0.847, green: 0.494, blue: 0.357)
+        light: Color(red: 0.906, green: 0.288, blue: 0.135),
+        dark: Color(red: 1.000, green: 0.505, blue: 0.349)
     )
 
     static let chartBlue = adaptive(
-        light: Color(red: 0.208, green: 0.404, blue: 0.808),
-        dark: Color(red: 0.482, green: 0.608, blue: 0.910)
+        light: Color(red: 0.147, green: 0.448, blue: 0.933),
+        dark: Color(red: 0.337, green: 0.624, blue: 1.000)
     )
 
     static let chartPurple = adaptive(
-        light: Color(red: 0.404, green: 0.341, blue: 0.784),
-        dark: Color(red: 0.635, green: 0.588, blue: 0.890)
+        light: Color(red: 0.468, green: 0.343, blue: 0.899),
+        dark: Color(red: 0.722, green: 0.608, blue: 1.000)
     )
 
     // MARK: Legacy aliases
@@ -115,19 +125,19 @@ private struct BudgetTracerCardModifier: ViewModifier {
         content
             .background(BudgetTracerStyle.surface, in: shape)
             .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(0.10), radius: 22, x: 0, y: 14)
         #else
         content
             .background(BudgetTracerStyle.surface, in: shape)
             .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 0.5))
-            .shadow(color: Color.black.opacity(0.04), radius: 20, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.07), radius: 22, x: 0, y: 12)
             .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
         #endif
     }
 }
 
 extension View {
-    func budgetTracerCard(cornerRadius: CGFloat = 22) -> some View {
+    func budgetTracerCard(cornerRadius: CGFloat = 14) -> some View {
         modifier(BudgetTracerCardModifier(cornerRadius: cornerRadius))
     }
 }

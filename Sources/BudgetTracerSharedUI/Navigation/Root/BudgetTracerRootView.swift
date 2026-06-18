@@ -109,6 +109,7 @@ public struct BudgetTracerRootView: View {
                 .tag(section.rawValue as String?)
             }
         }
+        .toolbarBackground(BudgetTracerStyle.canvas, for: .tabBar)
         #else
         NavigationSplitView {
             AccountsRailView(
@@ -152,18 +153,22 @@ public struct BudgetTracerRootView: View {
     #if os(macOS)
     private var macTopBar: some View {
         HStack {
-            Spacer()
+            Text(selectedSection.title)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(BudgetTracerStyle.ink)
+
+            Spacer(minLength: 24)
+
             ThemePillPicker(
                 options: BudgetSection.topNavSections,
                 selection: topNavSelection,
                 label: { $0.title }
             )
-            .frame(maxWidth: 460)
-            Spacer()
+            .frame(maxWidth: 430)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
         .background(BudgetTracerStyle.canvas)
     }
 

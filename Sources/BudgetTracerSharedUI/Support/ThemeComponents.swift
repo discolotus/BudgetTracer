@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Eyebrow label
 
-/// Small tracked uppercase label used above hero values and section groups.
+/// Small label used above hero values and section groups.
 struct EyebrowText: View {
     var text: String
 
@@ -12,9 +12,7 @@ struct EyebrowText: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
-            .tracking(1.6)
-            .textCase(.uppercase)
+            .font(.caption.weight(.semibold))
             .foregroundStyle(BudgetTracerStyle.inkMuted)
     }
 }
@@ -30,15 +28,14 @@ struct SectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.title3.weight(.semibold))
+            .font(.title2.weight(.bold))
             .foregroundStyle(BudgetTracerStyle.ink)
     }
 }
 
 // MARK: - Pill segmented picker
 
-/// Origin-style segmented control: a sunken capsule track with a white capsule
-/// that slides under the selected segment.
+/// Compact segmented control with a soft track and a raised selected segment.
 struct ThemePillPicker<Option: Hashable>: View {
     var options: [Option]
     @Binding var selection: Option
@@ -67,14 +64,18 @@ struct ThemePillPicker<Option: Hashable>: View {
             Text(label(option))
                 .font(.footnote.weight(isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? BudgetTracerStyle.ink : BudgetTracerStyle.inkMuted)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 7)
                 .frame(maxWidth: .infinity)
                 .background {
                     if isSelected {
                         Capsule(style: .continuous)
-                            .fill(BudgetTracerStyle.surface)
-                            .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 1)
+                            .fill(BudgetTracerStyle.surfaceRaised)
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1)
+                            )
+                            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 4)
                             .matchedGeometryEffect(id: "selection", in: namespace)
                     }
                 }
@@ -160,14 +161,14 @@ struct ChipFlowRow<Content: View>: View {
 
 // MARK: - Buttons
 
-/// Primary action: white text on the evergreen accent capsule.
+/// Primary action: white text on the focused red accent capsule.
 struct ThemeProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.vertical, 10)
             .background(BudgetTracerStyle.accent, in: Capsule(style: .continuous))
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -182,7 +183,7 @@ struct ThemeTonalButtonStyle: ButtonStyle {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(BudgetTracerStyle.accent)
             .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.vertical, 10)
             .background(BudgetTracerStyle.accentSoft, in: Capsule(style: .continuous))
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)

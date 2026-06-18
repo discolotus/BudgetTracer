@@ -26,7 +26,7 @@ struct AccountsRailView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 20) {
                     header
 
                     ForEach(groups, id: \.kind) { group in
@@ -45,14 +45,30 @@ struct AccountsRailView: View {
 
             footer
         }
-        .background(BudgetTracerStyle.canvas)
+        .background(BudgetTracerStyle.sidebar)
     }
 
     // MARK: Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            EyebrowText("Accounts")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "wallet.pass.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(BudgetTracerStyle.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BudgetTracer")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BudgetTracerStyle.ink)
+                    Text("Financial workspace")
+                        .font(.caption)
+                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                }
+            }
+
             syncStatus
         }
     }
@@ -66,7 +82,7 @@ struct AccountsRailView: View {
                     .controlSize(.mini)
                 Text("Syncing…")
             }
-            .font(.caption)
+            .font(.caption.weight(.medium))
             .foregroundStyle(BudgetTracerStyle.inkMuted)
         case .connected(_, let lastSyncedAt):
             if let lastSyncedAt {
@@ -74,21 +90,21 @@ struct AccountsRailView: View {
                     "Synced \(lastSyncedAt.formatted(date: .abbreviated, time: .shortened))",
                     systemImage: "checkmark.circle"
                 )
-                .font(.caption)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(BudgetTracerStyle.inkMuted)
             } else {
                 Text(dataSourceLabel)
-                    .font(.caption)
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(BudgetTracerStyle.inkMuted)
             }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle")
-                .font(.caption)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(BudgetTracerStyle.caution)
                 .lineLimit(2)
         case .notConnected:
             Text("Not connected")
-                .font(.caption)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(BudgetTracerStyle.inkMuted)
         }
     }
@@ -97,7 +113,7 @@ struct AccountsRailView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text(group.title)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(BudgetTracerStyle.inkMuted)
                 Spacer()
                 Text(group.total.formatted)
@@ -107,7 +123,7 @@ struct AccountsRailView: View {
             }
             .padding(.horizontal, 8)
 
-            VStack(spacing: 1) {
+            VStack(spacing: 2) {
                 ForEach(group.accounts, id: \.id) { account in
                     AccountRailRow(
                         account: account,
@@ -149,16 +165,26 @@ struct AccountsRailView: View {
             }
 
             Button(action: connect) {
-                Label("Connect account", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+                HStack {
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.semibold))
+                    Text("Connect account")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.themeTonal)
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(BudgetTracerStyle.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .disabled(connectIsDisabled)
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
             .help("Connect Account")
         }
-        .background(BudgetTracerStyle.canvas)
+        .background(BudgetTracerStyle.sidebar)
     }
 
     // MARK: Grouping
@@ -270,15 +296,15 @@ private struct AccountRailRow: View {
     var body: some View {
         Button(action: select) {
             rowContent
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
                 .background(
                     rowBackground,
-                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                 )
                 .overlay(alignment: .leading) {
                     if isSelected {
-                        Capsule(style: .continuous)
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(BudgetTracerStyle.accent)
                             .frame(width: 3)
                             .padding(.vertical, 7)
@@ -332,7 +358,7 @@ private struct AccountRailRow: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(BudgetTracerStyle.accent)
                 .frame(width: 26, height: 26)
-                .background(isSelected ? BudgetTracerStyle.surface : BudgetTracerStyle.accentSoft, in: Circle())
+                .background(isSelected ? BudgetTracerStyle.surfaceRaised : BudgetTracerStyle.accentSoft, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(account.name)
@@ -358,7 +384,7 @@ private struct AccountRailRow: View {
 
     private var rowBackground: Color {
         if isSelected {
-            return BudgetTracerStyle.accentSoft
+            return BudgetTracerStyle.surfaceRaised
         }
 
         if isHovering {
