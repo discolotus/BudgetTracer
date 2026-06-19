@@ -35,53 +35,22 @@ struct SectionHeader: View {
 
 // MARK: - Pill segmented picker
 
-/// Compact segmented control with a soft track and a raised selected segment.
+/// Compact segmented control backed by the platform segmented picker.
 struct ThemePillPicker<Option: Hashable>: View {
     var options: [Option]
     @Binding var selection: Option
     var label: (Option) -> String
 
-    @Namespace private var namespace
-
     var body: some View {
-        HStack(spacing: 2) {
+        Picker("", selection: $selection) {
             ForEach(options, id: \.self) { option in
-                segment(for: option)
+                Text(label(option))
+                    .tag(option)
             }
         }
-        .padding(3)
-        .background(BudgetTracerStyle.surfaceSunken, in: Capsule(style: .continuous))
-    }
-
-    private func segment(for option: Option) -> some View {
-        let isSelected = option == selection
-
-        return Button {
-            withAnimation(BudgetTracerStyle.spring) {
-                selection = option
-            }
-        } label: {
-            Text(label(option))
-                .font(.footnote.weight(isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? BudgetTracerStyle.ink : BudgetTracerStyle.inkMuted)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity)
-                .background {
-                    if isSelected {
-                        Capsule(style: .continuous)
-                            .fill(BudgetTracerStyle.surfaceRaised)
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1)
-                            )
-                            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 4)
-                            .matchedGeometryEffect(id: "selection", in: namespace)
-                    }
-                }
-                .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
     }
 }
 

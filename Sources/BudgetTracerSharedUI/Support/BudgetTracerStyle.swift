@@ -123,9 +123,9 @@ private struct BudgetTracerCardModifier: ViewModifier {
 
         #if os(macOS)
         content
-            .background(BudgetTracerStyle.surface, in: shape)
+            .background(.regularMaterial, in: shape)
             .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.10), radius: 22, x: 0, y: 14)
+            .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
         #else
         content
             .background(BudgetTracerStyle.surface, in: shape)
@@ -139,5 +139,19 @@ private struct BudgetTracerCardModifier: ViewModifier {
 extension View {
     func budgetTracerCard(cornerRadius: CGFloat = 14) -> some View {
         modifier(BudgetTracerCardModifier(cornerRadius: cornerRadius))
+    }
+
+    func budgetTracerWorkspaceBackground() -> some View {
+        modifier(BudgetTracerWorkspaceBackgroundModifier())
+    }
+}
+
+private struct BudgetTracerWorkspaceBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content.background(.background)
+        #else
+        content.background(BudgetTracerStyle.canvas)
+        #endif
     }
 }

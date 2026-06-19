@@ -456,7 +456,7 @@ struct NormalizedMonthView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .sheet(item: selectedTransactionBinding) { transaction in
             TransactionDetailSheet(
                 transaction: transaction,

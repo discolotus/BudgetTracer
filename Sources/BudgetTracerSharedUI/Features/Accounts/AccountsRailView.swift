@@ -45,7 +45,6 @@ struct AccountsRailView: View {
 
             footer
         }
-        .background(BudgetTracerStyle.sidebar)
     }
 
     // MARK: Sections
@@ -165,26 +164,17 @@ struct AccountsRailView: View {
             }
 
             Button(action: connect) {
-                HStack {
-                    Image(systemName: "plus")
-                        .font(.headline.weight(.semibold))
-                    Text("Connect account")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                }
+                Label("Connect account", systemImage: "plus")
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(BudgetTracerStyle.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .tint(BudgetTracerStyle.accent)
             .disabled(connectIsDisabled)
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
             .help("Connect Account")
         }
-        .background(BudgetTracerStyle.sidebar)
     }
 
     // MARK: Grouping
@@ -356,9 +346,8 @@ private struct AccountRailRow: View {
         HStack(spacing: 9) {
             Image(systemName: account.kind.iconName)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(BudgetTracerStyle.accent)
-                .frame(width: 26, height: 26)
-                .background(isSelected ? BudgetTracerStyle.surfaceRaised : BudgetTracerStyle.accentSoft, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .foregroundStyle(isSelected ? BudgetTracerStyle.accent : .secondary)
+                .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(account.name)
@@ -384,7 +373,7 @@ private struct AccountRailRow: View {
 
     private var rowBackground: Color {
         if isSelected {
-            return BudgetTracerStyle.surfaceRaised
+            return BudgetTracerStyle.accentSoft
         }
 
         if isHovering {

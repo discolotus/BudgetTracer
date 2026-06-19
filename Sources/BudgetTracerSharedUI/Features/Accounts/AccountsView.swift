@@ -25,7 +25,7 @@ struct AccountsView: View {
             .budgetTracerCard()
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
     }
 
     private func accountRow(for account: FinancialAccount) -> some View {

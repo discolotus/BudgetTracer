@@ -55,7 +55,7 @@ struct BudgetsView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .sheet(isPresented: $isAddingCategory) {
             CategoryEditorSheet(
                 category: nil,

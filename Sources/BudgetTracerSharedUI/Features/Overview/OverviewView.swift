@@ -41,7 +41,7 @@ struct OverviewView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
     }
 
     private var maxCategorySpend: Int64 {

@@ -57,7 +57,7 @@ struct TransactionsView: View {
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .searchable(text: $searchText, placement: .automatic, prompt: searchPrompt)
         .sheet(item: selectedTransactionBinding) { transaction in
             TransactionDetailSheet(
