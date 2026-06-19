@@ -2,9 +2,6 @@ name: Cloudflare Worker
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/cloudflare-worker.yml"
-      - "workers/plaid-relay/**"
   push:
     branches:
       - main

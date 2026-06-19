@@ -311,152 +311,154 @@ struct NormalizedMonthView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .center, spacing: 12) {
-                            MonthSelector(
-                                months: availableMonths,
-                                selectedMonth: analysisDate,
-                                selectMonth: selectMonth,
-                                selectPreviousMonth: selectPreviousMonth,
-                                selectNextMonth: selectNextMonth
-                            )
-
-                            Spacer()
-
-                            dateRangePicker
-                                .frame(maxWidth: 340)
-                        }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            MonthSelector(
-                                months: availableMonths,
-                                selectedMonth: analysisDate,
-                                selectMonth: selectMonth,
-                                selectPreviousMonth: selectPreviousMonth,
-                                selectNextMonth: selectNextMonth
-                            )
-
-                            dateRangePicker
-                        }
-                    }
-
-                    cashFlowBalanceBasisPicker
-
-                    BalanceDataStatusView(
-                        connectionState: connectionState,
-                        requestedRange: dateRange,
-                        visibleMonthCount: analysisWindow.visibleMonthCount,
-                        availableMonthCount: availableMonths.count
-                    )
-                }
-
-                CashFlowPlot(
-                    points: points,
-                    previousMonthPoints: previousMonthPoints,
-                    monthInterval: analysisDateInterval,
-                    previousMonthInterval: previousMonthInterval,
-                    balanceBasis: cashFlowBalanceBasis,
-                    showsPreviousPeriod: $showsPreviousPeriod,
-                    showsCashBalance: showsCashBalanceSelection,
-                    showsCreditCardDebt: showsCreditCardDebtSelection,
-                    showsCardAdjustedBalance: showsCardAdjustedBalanceSelection,
-                    previousPeriodIsAvailable: previousPeriodIsAvailable,
-                    visibleBalanceSeriesCount: visibleBalanceSeriesCount
-                )
-                    .frame(height: 280)
-                    .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
-
-                CashFlowAccountBreakdown(
-                    snapshot: snapshot,
-                    isExpanded: $plotAccountsExpanded,
-                    setAccountKind: setAccountKind,
-                    setAccountAvailableCash: setAccountAvailableCash,
-                    setAccountOverride: setAccountOverride
-                )
-                    .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
-
-                DailySpendingPlot(
-                    points: spendingPoints,
-                    previousMonthPoints: previousMonthSpendingPoints,
-                    monthInterval: analysisDateInterval,
-                    previousMonthInterval: previousMonthInterval,
-                    showsPreviousPeriod: $showsPreviousPeriod,
-                    previousPeriodIsAvailable: previousPeriodIsAvailable
-                )
-                    .frame(height: 280)
-                    .padding(18)
-                    .budgetTracerCard(cornerRadius: 24)
-
-                TransactionTimeSpendingPlot(
-                    points: transactionTimelinePoints,
-                    monthInterval: analysisDateInterval
-                )
-                .frame(height: 280)
-                .padding(18)
-                .budgetTracerCard(cornerRadius: 24)
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 16)], spacing: 16) {
-                    SummaryPill(title: "Regular items", value: "\(snapshot.recurringTransactionIDs.count)")
-                    SummaryPill(title: cashFlowBalanceBasis.cashSummaryTitle, value: (points.last?.runningCashBalance ?? cashFlowFallbackCash).formatted)
-                    SummaryPill(title: cashFlowBalanceBasis.cardDebtSummaryTitle, value: (points.last?.runningCreditDebt ?? cashFlowFallbackCardDebt).formatted)
-                    SummaryPill(
-                        title: cashFlowBalanceBasis.cardAdjustedSummaryTitle,
-                        value: (points.last?.runningCashMinusCreditDebt ?? (cashFlowFallbackCash - cashFlowFallbackCardDebt)).formatted
-                    )
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .center, spacing: 12) {
-                            SectionHeader("Regular monthly transactions")
-
-                            Spacer()
-
-                            TransactionSearchField(text: $transactionSearchText)
-                        }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeader("Regular monthly transactions")
-
-                            TransactionSearchField(text: $transactionSearchText)
-                        }
-                    }
-
-                    VStack(spacing: 0) {
-                        if !hasRegularMonthlyContent {
-                            Text(transactionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No transactions in this range." : "No matching transactions.")
-                                .font(.subheadline)
-                                .foregroundStyle(BudgetTracerStyle.inkMuted)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 28)
-                        } else {
-                            ForEach(recurringSeries) { series in
-                                RecurringSeriesRow(
-                                    series: series,
-                                    onTap: { selectedSeriesKey = series.id }
+            BudgetTracerGlassContainer(spacing: 24) {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .center, spacing: 12) {
+                                MonthSelector(
+                                    months: availableMonths,
+                                    selectedMonth: analysisDate,
+                                    selectMonth: selectMonth,
+                                    selectPreviousMonth: selectPreviousMonth,
+                                    selectNextMonth: selectNextMonth
                                 )
+
+                                Spacer()
+
+                                dateRangePicker
+                                    .frame(maxWidth: 340)
                             }
 
-                            ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(nonRecurringTransactions) { transaction in
-                                RecurringTransactionRow(
-                                    transaction: transaction,
-                                    isRecurring: snapshot.recurringTransactionIDs.contains(transaction.id),
-                                    setRecurring: setRecurring,
-                                    onOpenDetail: { selectedTransactionID = transaction.id }
+                            VStack(alignment: .leading, spacing: 12) {
+                                MonthSelector(
+                                    months: availableMonths,
+                                    selectedMonth: analysisDate,
+                                    selectMonth: selectMonth,
+                                    selectPreviousMonth: selectPreviousMonth,
+                                    selectNextMonth: selectNextMonth
                                 )
+
+                                dateRangePicker
                             }
                         }
+
+                        cashFlowBalanceBasisPicker
+
+                        BalanceDataStatusView(
+                            connectionState: connectionState,
+                            requestedRange: dateRange,
+                            visibleMonthCount: analysisWindow.visibleMonthCount,
+                            availableMonthCount: availableMonths.count
+                        )
                     }
-                    .budgetTracerCard(cornerRadius: 24)
+
+                    CashFlowPlot(
+                        points: points,
+                        previousMonthPoints: previousMonthPoints,
+                        monthInterval: analysisDateInterval,
+                        previousMonthInterval: previousMonthInterval,
+                        balanceBasis: cashFlowBalanceBasis,
+                        showsPreviousPeriod: $showsPreviousPeriod,
+                        showsCashBalance: showsCashBalanceSelection,
+                        showsCreditCardDebt: showsCreditCardDebtSelection,
+                        showsCardAdjustedBalance: showsCardAdjustedBalanceSelection,
+                        previousPeriodIsAvailable: previousPeriodIsAvailable,
+                        visibleBalanceSeriesCount: visibleBalanceSeriesCount
+                    )
+                    .frame(height: 280)
+                    .padding(18)
+                    .budgetTracerCard(cornerRadius: 16)
+
+                    CashFlowAccountBreakdown(
+                        snapshot: snapshot,
+                        isExpanded: $plotAccountsExpanded,
+                        setAccountKind: setAccountKind,
+                        setAccountAvailableCash: setAccountAvailableCash,
+                        setAccountOverride: setAccountOverride
+                    )
+                    .padding(18)
+                    .budgetTracerCard(cornerRadius: 16)
+
+                    DailySpendingPlot(
+                        points: spendingPoints,
+                        previousMonthPoints: previousMonthSpendingPoints,
+                        monthInterval: analysisDateInterval,
+                        previousMonthInterval: previousMonthInterval,
+                        showsPreviousPeriod: $showsPreviousPeriod,
+                        previousPeriodIsAvailable: previousPeriodIsAvailable
+                    )
+                    .frame(height: 280)
+                    .padding(18)
+                    .budgetTracerCard(cornerRadius: 16)
+
+                    TransactionTimeSpendingPlot(
+                        points: transactionTimelinePoints,
+                        monthInterval: analysisDateInterval
+                    )
+                    .frame(height: 280)
+                    .padding(18)
+                    .budgetTracerCard(cornerRadius: 16)
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 16)], spacing: 16) {
+                        SummaryPill(title: "Regular items", value: "\(snapshot.recurringTransactionIDs.count)")
+                        SummaryPill(title: cashFlowBalanceBasis.cashSummaryTitle, value: (points.last?.runningCashBalance ?? cashFlowFallbackCash).formatted)
+                        SummaryPill(title: cashFlowBalanceBasis.cardDebtSummaryTitle, value: (points.last?.runningCreditDebt ?? cashFlowFallbackCardDebt).formatted)
+                        SummaryPill(
+                            title: cashFlowBalanceBasis.cardAdjustedSummaryTitle,
+                            value: (points.last?.runningCashMinusCreditDebt ?? (cashFlowFallbackCash - cashFlowFallbackCardDebt)).formatted
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .center, spacing: 12) {
+                                SectionHeader("Regular monthly transactions")
+
+                                Spacer()
+
+                                TransactionSearchField(text: $transactionSearchText)
+                            }
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                SectionHeader("Regular monthly transactions")
+
+                                TransactionSearchField(text: $transactionSearchText)
+                            }
+                        }
+
+                        VStack(spacing: 0) {
+                            if !hasRegularMonthlyContent {
+                                Text(transactionSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No transactions in this range." : "No matching transactions.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 28)
+                            } else {
+                                ForEach(recurringSeries) { series in
+                                    RecurringSeriesRow(
+                                        series: series,
+                                        onTap: { selectedSeriesKey = series.id }
+                                    )
+                                }
+
+                                ForEach<[BudgetTransaction], BudgetTransaction.ID, RecurringTransactionRow>(nonRecurringTransactions) { transaction in
+                                    RecurringTransactionRow(
+                                        transaction: transaction,
+                                        isRecurring: snapshot.recurringTransactionIDs.contains(transaction.id),
+                                        setRecurring: setRecurring,
+                                        onOpenDetail: { selectedTransactionID = transaction.id }
+                                    )
+                                }
+                            }
+                        }
+                        .budgetTracerCard(cornerRadius: 16)
+                    }
                 }
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .sheet(item: selectedTransactionBinding) { transaction in
             TransactionDetailSheet(
                 transaction: transaction,
@@ -783,8 +785,8 @@ private struct TransactionTimeSpendingPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Transactions")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 Text((points.last?.cumulativeSpending ?? Money(minorUnits: 0)).formatted)
                     .font(.headline.monospacedDigit())
@@ -886,8 +888,8 @@ private struct DailySpendingPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Spending")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 Text("\(totalCumulativeNormalizedSpending.formatted) / \(totalCumulativeNormalizedIncome.formatted)")
                     .font(.headline.monospacedDigit())
@@ -1127,8 +1129,8 @@ private struct CashFlowPlot: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(balanceBasis.chartTitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BudgetTracerStyle.inkMuted)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BudgetTracerStyle.ink)
                 Spacer()
                 if let last = points.last {
                     Text(last.runningCashMinusCreditDebt.formatted)
@@ -1440,8 +1442,8 @@ private struct CashFlowAccountBreakdown: View {
                         .frame(width: 14)
 
                     Text("Plot accounts")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BudgetTracerStyle.inkMuted)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BudgetTracerStyle.ink)
 
                     Spacer()
 
@@ -1914,7 +1916,7 @@ private struct SummaryPill: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .budgetTracerCard(cornerRadius: 18)
+        .budgetTracerCard(cornerRadius: 14)
     }
 }
 

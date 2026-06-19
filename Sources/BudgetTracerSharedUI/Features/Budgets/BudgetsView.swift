@@ -12,50 +12,52 @@ struct BudgetsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    SectionHeader("Budgets")
-                    Spacer()
-                    Button {
-                        isAddingCategory = true
-                    } label: {
-                        Label("Add", systemImage: "plus")
+            BudgetTracerGlassContainer(spacing: 14) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        SectionHeader("Budgets")
+                        Spacer()
+                        Button {
+                            isAddingCategory = true
+                        } label: {
+                            Label("Add", systemImage: "plus")
+                        }
+                        .buttonStyle(.themeTonal)
+                        .help("Add budget category")
                     }
-                    .buttonStyle(.themeTonal)
-                    .help("Add budget category")
-                }
 
-                if snapshot.categories.isEmpty {
-                    Text("No budgets yet. Add one to start tracking spending against a limit.")
-                        .font(.subheadline)
-                        .foregroundStyle(BudgetTracerStyle.inkMuted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 28)
-                        .padding(.horizontal, 16)
-                        .budgetTracerCard()
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(snapshot.categories.indices, id: \.self) { index in
-                            let category = snapshot.categories[index]
+                    if snapshot.categories.isEmpty {
+                        Text("No budgets yet. Add one to start tracking spending against a limit.")
+                            .font(.subheadline)
+                            .foregroundStyle(BudgetTracerStyle.inkMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 28)
+                            .padding(.horizontal, 16)
+                            .budgetTracerCard()
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(snapshot.categories.indices, id: \.self) { index in
+                                let category = snapshot.categories[index]
 
-                            BudgetCategoryRow(
-                                category: category,
-                                spend: spend(for: category),
-                                onTap: { editingCategoryID = category.id }
-                            )
+                                BudgetCategoryRow(
+                                    category: category,
+                                    spend: spend(for: category),
+                                    onTap: { editingCategoryID = category.id }
+                                )
 
-                            if index < snapshot.categories.index(before: snapshot.categories.endIndex) {
-                                ThemeRowDivider()
-                                    .padding(.leading, 16)
+                                if index < snapshot.categories.index(before: snapshot.categories.endIndex) {
+                                    ThemeRowDivider()
+                                        .padding(.leading, 16)
+                                }
                             }
                         }
+                        .budgetTracerCard()
                     }
-                    .budgetTracerCard()
                 }
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .sheet(isPresented: $isAddingCategory) {
             CategoryEditorSheet(
                 category: nil,

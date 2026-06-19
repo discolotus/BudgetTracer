@@ -125,7 +125,7 @@ struct RecurringSeriesDetailSheet: View {
                 .padding(20)
             }
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         #if os(macOS)
         .frame(width: 460, height: 560)
         #endif

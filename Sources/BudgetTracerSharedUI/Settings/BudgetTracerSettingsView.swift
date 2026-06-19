@@ -7,45 +7,47 @@ public struct BudgetTracerSettingsView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                settingsCard(
-                    eyebrow: "Data mode",
-                    icon: "chart.bar.doc.horizontal",
-                    title: "Demo mode",
-                    detail: "Sample data is used unless backend mode is enabled for local Plaid testing."
-                )
+            BudgetTracerGlassContainer(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    settingsCard(
+                        eyebrow: "Data mode",
+                        icon: "chart.bar.doc.horizontal",
+                        title: "Demo mode",
+                        detail: "Sample data is used unless backend mode is enabled for local Plaid testing."
+                    )
 
-                settingsCard(
-                    eyebrow: "Local backend",
-                    icon: "lock.shield",
-                    title: "Plaid credentials stay behind the backend",
-                    detail: "The Apple apps read budget snapshots from the backend boundary and do not store Plaid secrets."
-                )
+                    settingsCard(
+                        eyebrow: "Local backend",
+                        icon: "lock.shield",
+                        title: "Plaid credentials stay behind the backend",
+                        detail: "The Apple apps read budget snapshots from the backend boundary and do not store Plaid secrets."
+                    )
 
-                VStack(alignment: .leading, spacing: 12) {
-                    EyebrowText("Privacy")
-                    Text("Delete local data")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BudgetTracerStyle.ink)
-                    Text("Removes the local ledger, Keychain secrets, cached sessions, and connected Plaid Items where available.")
-                        .font(.subheadline)
-                        .foregroundStyle(BudgetTracerStyle.inkMuted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 12) {
+                        EyebrowText("Privacy")
+                        Text("Delete local data")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BudgetTracerStyle.ink)
+                        Text("Removes the local ledger, Keychain secrets, cached sessions, and connected Plaid Items where available.")
+                            .font(.subheadline)
+                            .foregroundStyle(BudgetTracerStyle.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                    Button(role: .destructive) {
-                        isConfirmingDeleteLocalData = true
-                    } label: {
-                        Label("Delete Local Data", systemImage: "trash")
+                        Button(role: .destructive) {
+                            isConfirmingDeleteLocalData = true
+                        } label: {
+                            Label("Delete Local Data", systemImage: "trash")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .budgetTracerCard(cornerRadius: 20)
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .budgetTracerCard(cornerRadius: 20)
             }
             .padding()
         }
-        .background(BudgetTracerStyle.canvas)
+        .budgetTracerWorkspaceBackground()
         .navigationTitle("Settings")
         #if os(macOS)
         .frame(width: 460)
