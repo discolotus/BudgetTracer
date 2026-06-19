@@ -113,6 +113,24 @@ enum BudgetTracerStyle {
     }
 }
 
+// MARK: - Glass grouping
+
+struct BudgetTracerGlassContainer<Content: View>: View {
+    private let spacing: CGFloat?
+    private let content: () -> Content
+
+    init(spacing: CGFloat? = 16, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    var body: some View {
+        GlassEffectContainer(spacing: spacing) {
+            content()
+        }
+    }
+}
+
 // MARK: - Card surface
 
 private struct BudgetTracerCardModifier: ViewModifier {
@@ -121,18 +139,10 @@ private struct BudgetTracerCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        #if os(macOS)
         content
-            .background(.regularMaterial, in: shape)
+            .glassEffect(.regular, in: shape)
             .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1))
             .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
-        #else
-        content
-            .background(BudgetTracerStyle.surface, in: shape)
-            .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 0.5))
-            .shadow(color: Color.black.opacity(0.07), radius: 22, x: 0, y: 12)
-            .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
-        #endif
     }
 }
 
@@ -148,10 +158,6 @@ extension View {
 
 private struct BudgetTracerWorkspaceBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
-        #if os(macOS)
         content.background(.background)
-        #else
-        content.background(BudgetTracerStyle.canvas)
-        #endif
     }
 }

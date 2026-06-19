@@ -11,33 +11,35 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                OverviewHeroCard(
-                    snapshot: snapshot,
-                    connectionState: connectionState,
-                    plaidLinkState: plaidLinkState,
-                    preparePlaidLink: preparePlaidLink,
-                    createSandboxItem: createSandboxItem,
-                    refresh: refresh
-                )
+            BudgetTracerGlassContainer(spacing: 18) {
+                VStack(alignment: .leading, spacing: 18) {
+                    OverviewHeroCard(
+                        snapshot: snapshot,
+                        connectionState: connectionState,
+                        plaidLinkState: plaidLinkState,
+                        preparePlaidLink: preparePlaidLink,
+                        createSandboxItem: createSandboxItem,
+                        refresh: refresh
+                    )
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 14)], spacing: 14) {
-                    MetricTile(title: "Income", value: snapshot.monthlyIncome.formatted, valueColor: BudgetTracerStyle.positive)
-                    MetricTile(title: "Spending", value: snapshot.monthlySpending.formatted, valueColor: BudgetTracerStyle.ink)
-                }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 14)], spacing: 14) {
+                        MetricTile(title: "Income", value: snapshot.monthlyIncome.formatted, valueColor: BudgetTracerStyle.positive)
+                        MetricTile(title: "Spending", value: snapshot.monthlySpending.formatted, valueColor: BudgetTracerStyle.ink)
+                    }
 
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionHeader("Spending by category")
+                    VStack(alignment: .leading, spacing: 16) {
+                        SectionHeader("Spending by category")
 
-                    VStack(spacing: 14) {
-                        ForEach(snapshot.spendingByCategory(), id: \.id) { spend in
-                            CategorySpendRow(spend: spend, maxMinorUnits: maxCategorySpend)
+                        VStack(spacing: 14) {
+                            ForEach(snapshot.spendingByCategory(), id: \.id) { spend in
+                                CategorySpendRow(spend: spend, maxMinorUnits: maxCategorySpend)
+                            }
                         }
                     }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .budgetTracerCard()
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .budgetTracerCard()
             }
             .padding()
         }

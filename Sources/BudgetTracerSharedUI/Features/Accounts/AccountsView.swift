@@ -10,19 +10,21 @@ struct AccountsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                ForEach(snapshot.accounts.indices, id: \.self) { index in
-                    let account = snapshot.accounts[index]
+            BudgetTracerGlassContainer {
+                VStack(spacing: 0) {
+                    ForEach(snapshot.accounts.indices, id: \.self) { index in
+                        let account = snapshot.accounts[index]
 
-                    accountRow(for: account)
+                        accountRow(for: account)
 
-                    if index < snapshot.accounts.index(before: snapshot.accounts.endIndex) {
-                        ThemeRowDivider()
-                            .padding(.leading, 16)
+                        if index < snapshot.accounts.index(before: snapshot.accounts.endIndex) {
+                            ThemeRowDivider()
+                                .padding(.leading, 16)
+                        }
                     }
                 }
+                .budgetTracerCard()
             }
-            .budgetTracerCard()
             .padding()
         }
         .budgetTracerWorkspaceBackground()

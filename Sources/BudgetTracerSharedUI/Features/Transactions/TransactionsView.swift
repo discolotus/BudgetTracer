@@ -18,42 +18,44 @@ struct TransactionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                pageHeader
+            BudgetTracerGlassContainer(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    pageHeader
 
-                if let selectedAccount {
-                    AccountDetailSummaryView(
-                        account: selectedAccount,
-                        snapshot: snapshot,
-                        transactionCount: transactions.count,
-                        clear: clearSelectedAccount
-                    )
-                }
+                    if let selectedAccount {
+                        AccountDetailSummaryView(
+                            account: selectedAccount,
+                            snapshot: snapshot,
+                            transactionCount: transactions.count,
+                            clear: clearSelectedAccount
+                        )
+                    }
 
-                VStack(spacing: 0) {
-                    if transactions.isEmpty {
-                        Text("No matching transactions.")
-                            .font(.subheadline)
-                            .foregroundStyle(BudgetTracerStyle.inkMuted)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 32)
-                    } else {
-                        ForEach(transactions.indices, id: \.self) { index in
-                            TransactionRowView(
-                                transaction: transactions[index],
-                                isRecurring: snapshot.recurringTransactionIDs.contains(transactions[index].id),
-                                categoryName: categoryName(for: transactions[index]),
-                                onTap: { selectedTransactionID = transactions[index].id }
-                            )
+                    VStack(spacing: 0) {
+                        if transactions.isEmpty {
+                            Text("No matching transactions.")
+                                .font(.subheadline)
+                                .foregroundStyle(BudgetTracerStyle.inkMuted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 32)
+                        } else {
+                            ForEach(transactions.indices, id: \.self) { index in
+                                TransactionRowView(
+                                    transaction: transactions[index],
+                                    isRecurring: snapshot.recurringTransactionIDs.contains(transactions[index].id),
+                                    categoryName: categoryName(for: transactions[index]),
+                                    onTap: { selectedTransactionID = transactions[index].id }
+                                )
 
-                            if index < transactions.index(before: transactions.endIndex) {
-                                ThemeRowDivider()
-                                    .padding(.leading, 16)
+                                if index < transactions.index(before: transactions.endIndex) {
+                                    ThemeRowDivider()
+                                        .padding(.leading, 16)
+                                }
                             }
                         }
                     }
+                    .budgetTracerCard()
                 }
-                .budgetTracerCard()
             }
             .padding()
         }

@@ -133,12 +133,15 @@ struct ChipFlowRow<Content: View>: View {
 /// Primary action: white text on the focused red accent capsule.
 struct ThemeProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let shape = Capsule(style: .continuous)
+
         configuration.label
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(BudgetTracerStyle.accent, in: Capsule(style: .continuous))
+            .background(BudgetTracerStyle.accent.opacity(0.78), in: shape)
+            .glassEffect(.regular.tint(BudgetTracerStyle.accent).interactive(), in: shape)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(BudgetTracerStyle.spring, value: configuration.isPressed)
@@ -148,12 +151,15 @@ struct ThemeProminentButtonStyle: ButtonStyle {
 /// Secondary action: tonal capsule.
 struct ThemeTonalButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let shape = Capsule(style: .continuous)
+
         configuration.label
             .font(.subheadline.weight(.medium))
             .foregroundStyle(BudgetTracerStyle.accent)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(BudgetTracerStyle.accentSoft, in: Capsule(style: .continuous))
+            .glassEffect(.regular.tint(BudgetTracerStyle.accent.opacity(0.22)).interactive(), in: shape)
+            .overlay(shape.strokeBorder(BudgetTracerStyle.accent.opacity(0.24), lineWidth: 1))
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(BudgetTracerStyle.spring, value: configuration.isPressed)
