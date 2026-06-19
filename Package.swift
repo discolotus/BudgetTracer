@@ -5,7 +5,7 @@ let package = Package(
     name: "BudgetTracer",
     platforms: [
         .iOS("26.0"),
-        .macOS("26.0")
+        .macOS(.v14)
     ],
     products: [
         .library(name: "BudgetCore", targets: ["BudgetCore"]),

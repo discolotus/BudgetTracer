@@ -125,7 +125,11 @@ struct BudgetTracerGlassContainer<Content: View>: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: spacing) {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content()
+            }
+        } else {
             content()
         }
     }
@@ -139,10 +143,33 @@ private struct BudgetTracerCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        content
-            .glassEffect(.regular, in: shape)
-            .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: shape)
+                .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
+        } else {
+            content
+                .background(fallbackFill, in: shape)
+                .overlay(shape.strokeBorder(BudgetTracerStyle.hairline, lineWidth: fallbackStrokeWidth))
+                .shadow(color: Color.black.opacity(0.07), radius: 18, x: 0, y: 10)
+        }
+    }
+
+    private var fallbackFill: some ShapeStyle {
+        #if os(macOS)
+        .regularMaterial
+        #else
+        BudgetTracerStyle.surface
+        #endif
+    }
+
+    private var fallbackStrokeWidth: CGFloat {
+        #if os(macOS)
+        1
+        #else
+        0.5
+        #endif
     }
 }
 

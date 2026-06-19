@@ -135,16 +135,22 @@ struct ThemeProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = Capsule(style: .continuous)
 
-        configuration.label
+        let label = configuration.label
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(BudgetTracerStyle.accent.opacity(0.78), in: shape)
-            .glassEffect(.regular.tint(BudgetTracerStyle.accent).interactive(), in: shape)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(BudgetTracerStyle.spring, value: configuration.isPressed)
+
+        if #available(iOS 26.0, macOS 26.0, *) {
+            label
+                .glassEffect(.regular.tint(BudgetTracerStyle.accent).interactive(), in: shape)
+        } else {
+            label
+        }
     }
 }
 
@@ -153,16 +159,23 @@ struct ThemeTonalButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = Capsule(style: .continuous)
 
-        configuration.label
+        let label = configuration.label
             .font(.subheadline.weight(.medium))
             .foregroundStyle(BudgetTracerStyle.accent)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .glassEffect(.regular.tint(BudgetTracerStyle.accent.opacity(0.22)).interactive(), in: shape)
             .overlay(shape.strokeBorder(BudgetTracerStyle.accent.opacity(0.24), lineWidth: 1))
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(BudgetTracerStyle.spring, value: configuration.isPressed)
+
+        if #available(iOS 26.0, macOS 26.0, *) {
+            label
+                .glassEffect(.regular.tint(BudgetTracerStyle.accent.opacity(0.22)).interactive(), in: shape)
+        } else {
+            label
+                .background(BudgetTracerStyle.accentSoft, in: shape)
+        }
     }
 }
 
